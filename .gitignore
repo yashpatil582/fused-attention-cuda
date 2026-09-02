@@ -1,0 +1,16 @@
+build/
+build-*/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+python/**/*.so
+python/build/
+.venv/
+venv/
+.research/
+*.tmp
+.DS_Store
+profiles/**/*.sqlite
+# keep committed evidence: bench/results/**/*.csv, profiles/**/*.ncu-rep, profiles/**/*.raw.csv
