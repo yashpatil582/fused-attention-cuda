@@ -150,10 +150,13 @@ math was emulated on the CPU against `reference.py` (max |o − ref| ≤ 2e-15) 
 SOL SM% / Mem%, bytes-per-sector on `fa_s1_qk`, `dram__bytes.sum` on `fa_s1_softmax`, top-3 stall
 reasons, achieved occupancy, registers (ptxas sm_75: qk 34, softmax 42, pv 30; 0 spills).
 
-**Bench delta.** TBD — `bench/results/t4/stage1.csv` (median of ≥100 timed iterations after warm-up,
-256 MB L2 flush per iteration, clocks locked to 585 MHz); expected to lose to SDPA
-`EFFICIENT_ATTENTION` by a wide margin at every N, and to hit "OOM by design" for the fp32 N×N
-intermediates at B=8, H=32, N=4096 (17.2 GB of S alone on a 15 GB T4).
+**Bench delta.** `bench/results/t4/stage1.csv` @ 3add37c (median of 100 timed iterations after
+warm-up, 256 MB L2 flush per iteration, SM clock locked to 585 MHz): naive fp32 **410.60 ms** at
+`B2_H8_N2048_D64` and **817.09 ms** at `B2_H8_N2048_D128` versus SDPA `EFFICIENT_ATTENTION`
+11.61 ms / 20.87 ms and `torch_unfused` 12.16 ms / 17.84 ms — 35× and 39× slower than the vendor
+kernel, 0.042 TFLOP/s. The B=8, H=32, N=4096 rows are "OOM by design" (fp32 S alone would be
+17.2 GB on a 15 GB T4). The two canonical medians reproduced to within 0.01 ms across three runs
+(be6b6c8 dirty, f686962 dirty, 3add37c clean) — the protocol is repeatable.
 
 **Decision.** Keep as the baseline whatever the numbers are; the value of S1 is the metric table,
 not the time.
@@ -223,10 +226,13 @@ rejected (recorded in the file header).
 `l1tex__t_sector_hit_rate.pct`, `lts__t_sector_hit_rate.pct`, bank conflicts (the S5a "before"),
 occupancy, stalls.
 
-**Bench delta.** TBD — `perf:` trailer from `bench/results/t4/stage2.csv` versus stage1 at
-`B2_H8_N2048_D64` fp32.
+**Bench delta.** `perf: 410.6038ms -> 59.1586ms (6.94x) cfg=B2_H8_N2048_D64_fp32 gpu=Tesla-T4 stage=2`
+and `817.0893ms -> 115.8372ms (7.05x)` at D=128 (`bench/results/t4/stage2.csv` @ 3add37c, 585 MHz).
+Still 5.1× / 5.6× slower than SDPA `EFFICIENT_ATTENTION` (11.61 / 20.87 ms): the N² traffic is
+untouched. At N=128 the tiled kernels lose to SDPA by 2.7× (0.199 vs 0.074 ms, B1 H8): a 64×64 tile
+per block is too coarse for 8 heads × 2 tiles of work.
 
-**Decision.** TBD after measurement (expected: kept).
+**Decision.** Kept: 7× from access pattern alone, with the algorithm and its N² intermediates unchanged.
 
 **Known limitations.** Still materialises S and P (the N² traffic remains — that is S3's job); one
 tile configuration, no sweep; `Ks` column reads on a row-major tile are bank-conflicted by design.
@@ -290,11 +296,15 @@ tile-invariance test; defaults 32 (D=64) and 16 (D=128); dynamic-smem opt-in abo
 6–12 %: the padded Q tile is 16.6–33 KB), registers (ptxas sm_75: 146–255 depending on D and BC,
 0 spills).
 
-**Bench delta.** TBD — `perf:` trailer versus stage2 at `B2_H8_N2048_D64` fp32; and the first row
-that is not OOM-by-design at B=8, H=32, N=4096.
+**Bench delta.** `perf: 59.1586ms -> 25.1035ms (2.36x) cfg=B2_H8_N2048_D64_fp32 gpu=Tesla-T4 stage=3`;
+at D=128 only `115.8372ms -> 94.3486ms (1.23x)` (`bench/results/t4/stage3.csv` @ 3add37c). Versus SDPA
+`EFFICIENT_ATTENTION` fp32 the fused fp32 kernel is 2.16× slower at D=64 and 4.5× slower at D=128 —
+the predicted loss: thread-per-row with `acc[128]` in registers runs 2 warps per block at 1 block/SM.
+B=8, H=32, N=4096 now runs instead of being OOM by design (no N×N workspace).
 
-**Decision.** TBD after measurement; kept even if slower than SDPA(EFFICIENT) at N=4096, because
-the traffic collapse is the point of the stage and the speed comes from S4/S5.
+**Decision.** Kept. The stage removes the N² intermediates (the workspace is 0 bytes and the largest
+sweep shape runs); the fp32 thread-per-row mapping is deliberately simple and its low occupancy is
+the recorded reason for S4.
 
 **Known limitations.** Thread-per-row means `acc[D]` in registers and 2 warps per block: occupancy is
 bound by the Q tile's shared memory; no tensor cores; `N % 32 == 0`; forward only.
@@ -363,10 +373,14 @@ sm_75 (92–151 registers at D=64, 168–253 at D=128). bf16 compiles only for s
 **ncu after.** TBD — `profiles/t4/stage4_fa_s4_wmma*.raw.csv`: tensor-pipe utilisation, FFMA
 count, stall breakdown, occupancy (1 block/SM = 4 warps at D=64/BC=64 is the honest T4 number).
 
-**Bench delta.** TBD — `perf:` trailer versus stage3 (fp32) and the first fp16 rows versus SDPA
-`EFFICIENT_ATTENTION` in fp16.
+**Bench delta.** `perf: 25.1035ms -> 3.9442ms (6.36x) cfg=B2_H8_N2048_D64 (fp32 S3 -> fp16 S4) gpu=Tesla-T4 stage=4`
+and `94.3486ms -> 11.1697ms (8.45x)` at D=128 (`bench/results/t4/stage4.csv` @ 3add37c). Against SDPA
+`EFFICIENT_ATTENTION` in fp16 (2.4863 ms / 5.0038 ms) the WMMA kernel reaches **63.0 %** of the vendor
+throughput at D=64 (4.36 vs 6.91 TFLOP/s) and **44.8 %** at D=128 (3.08 vs 6.87 TFLOP/s). Whole
+ladder at C64: 410.6 → 59.2 → 25.1 → 3.94 ms = 104× from naive.
 
-**Decision.** TBD after measurement.
+**Decision.** Kept. First stage that is within 2× of the vendor kernel; the remaining gap is the two
+shared-memory round trips and the single resident block per SM, which S5 measures knob by knob.
 
 **Known limitations.** Two shared-memory round trips per K/V tile (S store/reload, O rescale);
 one block per SM on T4 at the default tiles; no cp.async (Ampere+), no swizzle (S5a), no
