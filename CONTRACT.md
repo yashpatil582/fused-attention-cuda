@@ -27,10 +27,14 @@ All kernels are templates; the regex matches the mangled name prefix, so keep th
 commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
 ```
 - `impl` ∈ {naive, tiled, fused, wmma, tuned, sdpa_efficient, sdpa_flash, sdpa_math_fp32, sdpa_cudnn, torch_unfused, flash_attn}
+  for the README tables; additionally `smoke` (stage 0: the S0 `fa_bench --smoke` round-trip row, never rendered) and
+  `gpt_sdpa_efficient` / `gpt_sdpa_flash` / `gpt_fused` in `gpt_block.csv` only (`ms_median` = block time, tokens/s in `notes`).
 - `stage` ∈ {1..5} for our kernels, 0 for baselines. `dtype` ∈ {fp32, fp16, bf16}. `causal` ∈ {0,1}.
 - `tflops` = FLOPs / time with FLOPs = 4·B·H·N²·D (causal rows use the full count until block skipping exists; `notes` says `flops=full`).
-- `gbps` = bytes actually moved / time (fused: Q+K+V+O+LSE; materializing stages add S and P writes+reads).
-- `notes` free text: `oom_by_design`, `flops=full`, `clock=unlocked`, `degraded_profiling`, etc.
+- `gbps` = modelled minimum bytes / time (fused: Q+K+V+O+LSE; materializing impls add one write and one read each of S and P);
+  measured traffic is the profile's `dram__bytes.sum`.
+- `notes` free text: `oom_by_design`, `flops=full`, `clock=unlocked`, `clock_lock=<mhz>`, `noisy`, `iters=<n>`, `run=<utc>`,
+  `backend_refused:<msg>`, `degraded_profiling`, etc.
 - `ms_*` from CUDA events, median of ≥100 timed iterations after ≥10 warmup, 256 MB L2 flush before every timed iteration.
 - `gpu` directory name: `t4`, `a10g`, `a10`, `a100`, `4090`, … (lowercase, no spaces); `gpu` column = `nvidia-smi` name verbatim.
 

@@ -1,0 +1,13 @@
+# Keep the pinned GitHub Actions (checkout, setup-python, upload-artifact,
+# Jimver/cuda-toolkit) current. Weekly is enough for a portfolio repo; the
+# commit prefix keeps the conventional-commit rule from CONTRACT.md §8.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci
+      include: scope

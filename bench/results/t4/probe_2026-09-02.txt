@@ -1,0 +1,22 @@
+# Colab free-tier probe, 2026-09-02 ~16:15 PDT (notebook fa-runner.ipynb, runtime T4)
+GPU: Tesla T4, driver 580.82.07, compute_cap 7.5, 15360 MiB, clocks.max.sm 1590 MHz (idle 300 MHz)
+nvcc: 12.8.93 (cuda_12.8.r12.8)   user: root (uid 0)
+ncu: /usr/local/cuda/bin/ncu (Nsight Compute, (c) 2018-2025)   compute-sanitizer: /usr/local/cuda/bin/compute-sanitizer
+cmake: /usr/local/bin/cmake   ninja: MISSING (pip install ninja)   nsys: MISSING   git: present
+torch: 2.11.0+cu128, cuda 12.8, arch list ['sm_75','sm_80','sm_86','sm_90','sm_100','sm_120']
+PROBE 2 (ncu --metrics on a 10-line kernel, no sudo, no modprobe): NCU_VERDICT=PASS
+  dram__bytes.sum 296.54 KB | launch__registers_per_thread 16 | sm__cycles_elapsed.avg 3589.80 | sm__warps_active.avg.pct_of_peak_sustained_active 84.51 %
+  metric IDs confirmed present: sm__throughput, gpu__time_duration, sm__pipe_tensor_op_hmma_cycles_active,
+    smsp__warp_issue_stalled_long_scoreboard_per_warp_active, l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld
+  sections present: ComputeWorkloadAnalysis LaunchStats MemoryWorkloadAnalysis MemoryWorkloadAnalysis_Chart MemoryWorkloadAnalysis_Tables
+    Occupancy SchedulerStats SpeedOfLight SpeedOfLight_HierarchicalDoubleRooflineChart SpeedOfLight_HierarchicalHalfRooflineChart
+    SpeedOfLight_HierarchicalSingleRooflineChart SpeedOfLight_HierarchicalTensorRooflineChart SpeedOfLight_RooflineChart WarpStateStats
+  --clock-control base: accepted
+  nvidia-smi -lgc 585,585: WORKS ("GPU clocks set to (gpuClkMin 585, gpuClkMax 585)"); -rgc works
+  nsys: missing (not needed while counters work)
+Caveat (from research): counter access is per-instance on Colab; re-run PROBE 2 at the start of every session.
+
+# PROBE L (local nvcc on the Mac via colima/vz + nvidia/cuda:12.8.1-devel-ubuntu22.04 arm64), 2026-09-02
+Docker Hub / nvcr.io pulls through the colima VM corrupted two large layers (digest mismatch, repeatable);
+fix = `crane pull --platform linux/arm64 ... cuda-devel-arm64.tar` on the host + `docker load`. nvcc 12.8.93 (same as Colab).
+Compile check for sm_75/sm_86 with -Xptxas -v works without a GPU (see build/docker via scripts/local_compile.sh).

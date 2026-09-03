@@ -1,0 +1,157 @@
+# build.yml — compile-only CUDA CI.
+#
+# WHAT THIS PROVES (and the README says exactly this): every .cu compiles for
+# sm_75/80/86/89/90 + compute_90 PTX with CUDA 12.8.1 on a GPU-less runner, the
+# -Xptxas -v register/spill report is published per push, and the fp64 CPU
+# reference builds and passes ctest WITHOUT any CUDA toolkit installed.
+# It does NOT prove a kernel ran or was correct on a GPU — GitHub GPU runners are
+# Team/Enterprise-only and billed even for public repos; GPU evidence lives in
+# bench/results/<gpu>/ and profiles/<gpu>/ committed by scripts/gpu_run.sh.
+#
+# WHY these choices:
+# - Jimver/cuda-toolkit@v0.2.36 (latest, 2026-08-02) with method: network installs
+#   only apt packages cuda-nvcc-12-8 + cuda-cudart-dev-12-8 (sub-packages get both
+#   the "cuda-" prefix and the "-MAJOR-MINOR" suffix; plain "cudart" would resolve
+#   to the runtime .so without headers). Full toolkit measured at 113 s; nvcc-only
+#   is expected to be less — the debug step records the real number (PROBE 6).
+# - Architectures come from the `ci` preset in CMakePresets.json
+#   (75-real;80-real;86-real;89-real;90-real;90-virtual). NEVER `native`: nvcc
+#   detects visible GPUs for -arch=native and there are none on the runner.
+# - ubuntu-24.04 ships g++ 13.2, inside CUDA 12.8's GCC <= 14 cap. The 13.0.1 leg is
+#   continue-on-error: it is an early warning for the next major, not a merge gate.
+# - log-file-suffix must be unique per matrix leg or the action's install-log
+#   artifact upload collides and the job fails.
+name: build
+
+on:
+  push:
+    branches: [main, "stage*"]
+  pull_request:
+
+# A newer push to the same branch/PR supersedes the running build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # Explicit bash gives `-eo pipefail`, so `cmd | tee log` fails when cmd fails.
+    shell: bash
+
+jobs:
+  build-cuda:
+    name: cuda ${{ matrix.cuda }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+        cuda: ["12.8.1"]
+        experimental: [false]
+        include:
+          # Next-major canary. CUDA 13 dropped Maxwell/Pascal/Volta; sm_75..90 still
+          # build. Failures here are informational (continue-on-error).
+          - os: ubuntu-24.04
+            cuda: "13.0.1"
+            experimental: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install CUDA ${{ matrix.cuda }} (nvcc + cudart headers only)
+        id: cuda
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: ${{ matrix.cuda }}
+          method: "network"
+          sub-packages: '["nvcc", "cudart-dev"]'
+          # Both cache layers are on by default; left explicit so nobody wraps this
+          # step in actions/cache (it would double-cache).
+          use-github-cache: "true"
+          use-local-cache: "true"
+          log-file-suffix: "${{ matrix.os }}-${{ matrix.cuda }}.txt"
+
+      - name: Toolchain debug (PROBE 6 — what did apt actually install?)
+        run: |
+          echo "CUDA_PATH=${{ steps.cuda.outputs.CUDA_PATH }}"
+          dpkg -l | grep -E '^ii +(cuda-|libcu)' || echo "(no cuda-* packages listed by dpkg)"
+          nvcc --version
+          g++ --version | head -1
+          cmake --version | head -1
+          ninja --version
+
+      - name: Configure (cmake --preset ci)
+        env:
+          CUDACXX: ${{ steps.cuda.outputs.CUDA_PATH }}/bin/nvcc
+        run: |
+          cmake --preset ci 2>&1 | tee configure.log
+          # The preset owns binaryDir; recover it from CMake's own final line so this
+          # workflow does not hard-code a build directory or require a buildPreset.
+          BUILD_DIR="$(sed -n 's/^-- Build files have been written to: //p' configure.log | tail -1)"
+          test -n "$BUILD_DIR" && test -f "$BUILD_DIR/CMakeCache.txt"
+          echo "BUILD_DIR=$BUILD_DIR" >> "$GITHUB_ENV"
+
+      - name: Guard — architectures are explicit, never native
+        run: |
+          ARCHS="$(grep -E '^CMAKE_CUDA_ARCHITECTURES' "$BUILD_DIR/CMakeCache.txt" || true)"
+          echo "$ARCHS"
+          if [[ -z "$ARCHS" ]] || [[ "$ARCHS" == *native* ]]; then
+            echo "::error::CMAKE_CUDA_ARCHITECTURES must be an explicit list in the ci preset (no GPU on this runner)"
+            exit 1
+          fi
+
+      - name: Build (all stages + fa_bench, -Xptxas -v)
+        run: cmake --build "$BUILD_DIR" --parallel 2>&1 | tee build.log
+
+      - name: Collect ptxas register/spill report
+        if: always()
+        run: |
+          REPORT="ptxas-report-cuda${{ matrix.cuda }}.txt"
+          {
+            echo "# ptxas -v report  commit=${GITHUB_SHA}  cuda=${{ matrix.cuda }}  runner=${{ matrix.os }}"
+            echo "# archs: $(grep -E '^CMAKE_CUDA_ARCHITECTURES' "$BUILD_DIR/CMakeCache.txt" || true)"
+            # ptxas prints the spill line indented (no "ptxas" prefix), so match it too.
+            grep -E '^ptxas (info|warning)|bytes spill|bytes stack frame' build.log || true
+          } > "$REPORT"
+          wc -l "$REPORT"
+          python3 .github/scripts/ptxas_summary.py "$REPORT" --markdown "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ptxas report + build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ptxas-report-cuda${{ matrix.cuda }}
+          path: |
+            ptxas-report-cuda${{ matrix.cuda }}.txt
+            configure.log
+            build.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  cpu-reference:
+    # Separate job on a runner with NO CUDA toolkit: proves the fp64 CPU oracle
+    # (src/reference/) and the cpu-only preset really have no CUDA dependency,
+    # which is what lets the Mac run `make cpu-test` without nvcc.
+    name: cpu-only preset (no CUDA)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure (cmake --preset cpu-only)
+        run: |
+          cmake --preset cpu-only 2>&1 | tee configure-cpu.log
+          BUILD_DIR="$(sed -n 's/^-- Build files have been written to: //p' configure-cpu.log | tail -1)"
+          test -n "$BUILD_DIR" && test -f "$BUILD_DIR/CMakeCache.txt"
+          echo "BUILD_DIR=$BUILD_DIR" >> "$GITHUB_ENV"
+
+      - name: Build CPU reference
+        run: cmake --build "$BUILD_DIR" --parallel
+
+      - name: ctest
+        run: ctest --test-dir "$BUILD_DIR" --output-on-failure

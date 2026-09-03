@@ -1,0 +1,50 @@
+# clang-format configuration — CONTRACT.md section 8: Google style, 100 columns.
+#
+# WHY these settings:
+# - .cu/.cuh files need no special Language entry: clang-format's
+#   getLanguageByFileName() falls through to LK_Cpp for unknown extensions, so
+#   CUDA sources are formatted as C++ (verified against llvm-project Format.cpp).
+# - SpacesInAngles: Never keeps a kernel launch `k<<<grid, block, smem, stream>>>(...)`
+#   as one token run instead of `< < <`.
+# - AllowShortFunctionsOnASingleLine: Empty keeps small __device__ helpers readable
+#   (one statement per line) while still allowing `void f() {}`.
+# - AttributeMacros teaches the annotator that `__global__`/`__device__`/`__host__`/
+#   `__forceinline__` are attribute-like, so it does not mistake them for the
+#   return type and produce odd breaks before the kernel name.
+# - PointerAlignment: Left (`const void* q`) matches the frozen include/fa/attention.cuh.
+#
+# The pinned tool version is v23.1.0 in both .pre-commit-config.yaml and
+# .github/workflows/lint.yml so local `pre-commit run` and CI agree byte for byte.
+---
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 100
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+Standard: c++17
+
+SpacesInAngles: Never
+AllowShortFunctionsOnASingleLine: Empty
+# WithoutElse (Google default) keeps the idiomatic kernel guard `if (i < n) o[i] = x;`
+# on one line; loops are never collapsed.
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Empty
+
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+AttributeMacros:
+  - __global__
+  - __device__
+  - __host__
+  - __forceinline__
+
+# Keep `#pragma unroll` and `#if __CUDA_ARCH__ >= 800` blocks flush-left like the
+# rest of the preprocessor; kernels are dense enough without indented directives.
+IndentPPDirectives: None
+
+# Google style already: IncludeBlocks Regroup with <x.h> C headers first (this is
+# where <cuda_runtime.h> / <cuda_fp16.h> land), then <c++> headers, then "project".
+# That order is exactly what the frozen attention.cuh uses, so it is left untouched.

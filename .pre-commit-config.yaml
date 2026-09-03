@@ -1,0 +1,51 @@
+# pre-commit hooks — the same pinned versions run in .github/workflows/lint.yml,
+# so `pre-commit run --all-files` locally reproduces CI exactly.
+#
+#   pip install pre-commit && pre-commit install      # once
+#   pre-commit run --all-files                        # before every push
+#
+# WHY these pins (verified against the upstream tags on 2026-09-02):
+# - mirrors-clang-format v23.1.0  == pip clang-format 23.1.0 used by lint.yml
+# - ruff-pre-commit    v0.16.5    == pip ruff 0.16.5 used by lint.yml
+# - gersemi            0.28.1     == pip gersemi 0.28.1 used by lint.yml
+# Keep the four numbers in lockstep; a version skew here is the #1 cause of
+# "passes locally, fails in CI" formatting diffs.
+minimum_pre_commit_version: "3.0.0"
+
+# Committed evidence (CSV, .ncu-rep, raw profiler output) is never rewritten by a
+# formatter: a whitespace "fix" there would silently alter a benchmark artifact.
+exclude: ^(bench/results/|profiles/|docs/img/)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v23.1.0
+    hooks:
+      - id: clang-format
+        # `cuda` covers .cu and .cuh (identify tags both as cuda); c/c++ cover
+        # the torch extension (.cpp) and headers (.h). -fallback-style=none makes
+        # a missing .clang-format an error instead of a silent LLVM-style reformat.
+        types_or: [c, c++, cuda]
+        args: ["-fallback-style=none", "-style=file", "-i"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+
+  # The hook manifest lives in the *-pre-commit mirror, not the main gersemi repo
+  # (which has no .pre-commit-hooks.yaml); revs track gersemi's versions 1:1.
+  - repo: https://github.com/BlankSpruce/gersemi-pre-commit
+    rev: 0.28.1
+    hooks:
+      - id: gersemi

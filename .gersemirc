@@ -1,0 +1,6 @@
+# gersemi (CMake formatter) configuration — pinned to 0.28.1 in
+# .pre-commit-config.yaml and .github/workflows/lint.yml.
+# WHY: cmakelang/cmake-format has had no release since 2020; gersemi is the
+# maintained formatter. 100 columns matches .clang-format and ruff (CONTRACT.md §8).
+line_length: 100
+indent: 2

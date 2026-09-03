@@ -43,9 +43,8 @@ struct Params {
 // Launch is asynchronous on `stream`. Returns cudaSuccess, or the first CUDA error
 // (cudaErrorNotSupported when (impl, dtype, D, arch) is not implemented — see
 // impl_supports()). Never aborts; callers decide.
-cudaError_t forward(Impl impl, Dtype dtype, const void* q, const void* k, const void* v,
-                    void* o, float* lse, void* workspace, const Params& p,
-                    cudaStream_t stream);
+cudaError_t forward(Impl impl, Dtype dtype, const void* q, const void* k, const void* v, void* o,
+                    float* lse, void* workspace, const Params& p, cudaStream_t stream);
 
 // Bytes of scratch memory `forward` needs. Naive/Tiled: fp32 S and P, i.e.
 // 2 * B * H * N * N * sizeof(float). Fused/Wmma/Tuned: 0.
@@ -65,7 +64,7 @@ struct DebugOverrides {
 void set_debug_overrides(const DebugOverrides& o);
 DebugOverrides get_debug_overrides(bool from_env = true);
 
-const char* impl_name(Impl impl);    // "naive", "tiled", "fused", "wmma", "tuned"
+const char* impl_name(Impl impl);     // "naive", "tiled", "fused", "wmma", "tuned"
 const char* dtype_name(Dtype dtype);  // "fp32", "fp16", "bf16"
 std::size_t dtype_size(Dtype dtype);  // 4, 2, 2
 

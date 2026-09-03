@@ -1,0 +1,98 @@
+# lint.yml — formatting + CPU-only tests.
+#
+# WHAT THIS PROVES: clang-format (Google, 100 cols; .cu/.cuh formatted as C++),
+# ruff check + format, gersemi (CMake) are clean, and the CPU pytest suite passes:
+# the Python model of the tiled online softmax (tile invariance, causal alignment,
+# LSE), README generated-block staleness, and benchmark CSV sanity.
+# No GPU is involved; `-m "not gpu"` deselects every kernel/op test.
+#
+# WHY: the tool versions are pinned to the SAME numbers as .pre-commit-config.yaml
+# (clang-format 23.1.0, ruff 0.16.5, gersemi 0.28.1) so `pre-commit run --all-files`
+# on the Mac reproduces this job byte for byte. torch comes from the CPU wheel index
+# (~200 MB instead of ~2.5 GB with CUDA libs) — the tests never touch a device.
+name: lint
+
+on:
+  push:
+    branches: [main, "stage*"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  format:
+    name: clang-format / ruff / gersemi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          # Tool pins live in this file, so key the cache on it.
+          cache-dependency-path: .github/workflows/lint.yml
+
+      - name: Install pinned formatters
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "ruff==0.16.5" "clang-format==23.1.0" "gersemi==0.28.1"
+          ruff --version && clang-format --version && gersemi --version
+
+      - name: ruff check
+        run: ruff check --output-format=github .
+
+      - name: ruff format --check
+        run: ruff format --check --diff .
+
+      - name: clang-format --dry-run --Werror (.cu .cuh .cpp .cc .h .hpp)
+        run: |
+          # git ls-files keeps this to tracked sources (no build dirs, no vendored
+          # code); -z/-0 survive odd file names; xargs -r skips an empty list.
+          git ls-files -z -- '*.cu' '*.cuh' '*.cpp' '*.cc' '*.h' '*.hpp' \
+            | xargs -0 -r clang-format --dry-run --Werror --style=file --fallback-style=none
+
+      - name: gersemi --check (CMake)
+        run: |
+          git ls-files -z -- 'CMakeLists.txt' '*/CMakeLists.txt' '*.cmake' \
+            | xargs -0 -r gersemi --check --diff
+
+  cpu-tests:
+    name: pytest -m "not gpu" (torch CPU wheel)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Headless matplotlib for scripts/roofline.py tests; no display on the runner.
+      MPLBACKEND: Agg
+      # Belt and braces: even if a test forgets its marker, torch sees no device.
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/workflows/lint.yml
+
+      - name: Install torch (CPU wheel) + test deps
+        run: |
+          python -m pip install --upgrade pip
+          # Two commands on purpose: the PyTorch CPU index only serves torch and its
+          # deps, so pytest/pandas/... must resolve from PyPI in a separate call.
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install pytest pandas pyyaml matplotlib numpy
+          python -c "import torch, sys; print('torch', torch.__version__, 'cuda build:', torch.version.cuda); sys.exit(1 if torch.cuda.is_available() else 0)"
+
+      - name: pytest (CPU only)
+        run: python -m pytest -q -m "not gpu"

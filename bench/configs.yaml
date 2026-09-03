@@ -1,0 +1,64 @@
+# Benchmark / profiling configurations — CONTRACT.md §5 (frozen names C64 / C128).
+#
+# Read by bench/bench.py, bench/gpt_block.py, scripts/profile.sh (via scripts/kernel_regex.py)
+# and scripts/roofline.py. Config strings follow the CONTRACT format `B<b>_H<h>_N<n>_D<d>`
+# and are accepted verbatim by `fa_bench --cfg` and `bench.py --cfg`.
+
+canonical:
+  # The two configs profiled with ncu at every stage (same SHA as the bench row).
+  # causal 0 in-window; causal 1 is added from S6 when block skipping exists.
+  C64:  {B: 2, H: 8, N: 2048, D: 64,  causal: 0}
+  C128: {B: 2, H: 8, N: 2048, D: 128, causal: 0}
+
+sweep:
+  # README table: cartesian product of the lists below (48 configs).
+  N: [128, 256, 512, 1024, 2048, 4096]
+  D: [64, 128]
+  BH: [[1, 8], [8, 32]]
+  causal: [0, 1]
+
+# Default dtype per stage: fp32 kernels for S1-S3, tensor-core stages in fp16.
+stage_dtype: {1: fp32, 2: fp32, 3: fp32, 4: fp16, 5: fp16}
+
+# Bytes model used for the `gbps` column: the MODELLED MINIMUM (CONTRACT §3, protocol rule 6),
+# not measured traffic (that is `dram__bytes.sum` in the NCU table).
+#   fused (never materializes NxN):   Q + K + V + O in the run dtype, LSE [B,H,N] fp32.
+#   materializing:                    + S write, S read, P write, P read of the NxN scores
+#                                     (torch_unfused's separate scale/mask kernels and S1's
+#                                     multi-pass softmax move more than this minimum).
+#   intermediate: fp32 -> our naive/tiled workspace is fp32 S and P (attention.cuh
+#                         workspace_bytes = 2*B*H*N*N*4) regardless of input dtype;
+#                 input -> torch_unfused keeps S/P in the input dtype.
+impls:
+  naive:          {stage: 1, materializing: true,  intermediate: fp32}
+  tiled:          {stage: 2, materializing: true,  intermediate: fp32}
+  fused:          {stage: 3, materializing: false, writes_lse: true}
+  wmma:           {stage: 4, materializing: false, writes_lse: true}
+  tuned:          {stage: 5, materializing: false, writes_lse: true}
+  sdpa_efficient: {stage: 0, materializing: false, writes_lse: true}
+  sdpa_flash:     {stage: 0, materializing: false, writes_lse: true}
+  sdpa_cudnn:     {stage: 0, materializing: false, writes_lse: true}
+  sdpa_math_fp32: {stage: 0, materializing: true,  intermediate: fp32, io: fp32, oracle_only: true}
+  torch_unfused:  {stage: 0, materializing: true,  intermediate: input}
+  flash_attn:     {stage: 0, materializing: false, writes_lse: true}
+
+# OOM-by-design rule (judge_plan §4.4 item 8): a materializing impl whose NxN intermediates
+# (S and P together = 2*B*H*N*N*sizeof(intermediate); fp32 for our workspace and the MATH
+# oracle, the input dtype for torch_unfused) exceed `fraction` of the device's TOTAL memory
+# (never free memory: bench_main.cu uses the same rule) is not run. bench.py still writes
+# the row with empty ms_* columns and notes=oom_by_design so the README shows WHY.
+# Example (derived, not measured): B8 H32 N4096 fp32 S alone is 8*32*4096^2*4 B ~= 17.2 GB
+# on a 15 GB T4 -> naive/tiled rows are OOM by design there.
+oom_by_design:
+  fraction: 0.25
+  applies_to: [naive, tiled, sdpa_math_fp32, torch_unfused]
+
+# nanoGPT-style block for bench/gpt_block.py (karpathy/nanoGPT defaults).
+gpt_block:
+  n_embd: 768
+  n_head: 12
+  T: 1024
+  batch: 8
+  dtype: fp16
+  iters: 50
+  warmup: 10

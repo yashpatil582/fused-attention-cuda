@@ -1,0 +1,30 @@
+# Tool configuration only. The PyTorch extension is built from python/setup.py (see its
+# docstring); there is deliberately no [build-system] table here so `pip install .` at the repo
+# root does not try to compile CUDA.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# colab/runner.ipynb is three cells of `!` shell magics and secrets plumbing; its lines cannot be
+# wrapped to 100 columns, so ruff (which lints .ipynb by default) skips it.
+extend-exclude = [".research", "build", "build-*", "*.ipynb"]
+
+[tool.ruff.lint]
+# E/F: pycodestyle + pyflakes; I: isort; B: bugbear; UP: pyupgrade (py312 syntax).
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fused_attn"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "gpu: needs a CUDA device; auto-skipped when torch.cuda.is_available() is False",
+]
+# MPLBACKEND=Agg is exported by tests/conftest.py (pytest-env is not a dependency) so plotting
+# tests never try to open a window on CI or over SSH.

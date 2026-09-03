@@ -1,0 +1,61 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "colab",
+      "displayName": "Colab T4 (sm_75 SASS only)",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_CUDA_ARCHITECTURES": "75-real" }
+    },
+    {
+      "name": "vm",
+      "displayName": "Rented VM (compile for the GPU that is present)",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_CUDA_ARCHITECTURES": "native" }
+    },
+    {
+      "name": "ci",
+      "displayName": "CI compile-only: Turing..Hopper SASS + sm_90 PTX (never `native`: no GPU on runners)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CUDA_ARCHITECTURES": "75-real;80-real;86-real;89-real;90-real;90-virtual"
+      }
+    },
+    {
+      "name": "docker",
+      "displayName": "Local nvcc-in-Docker compile loop (scripts/local_compile.sh overrides the arch list)",
+      "inherits": "ci",
+      "binaryDir": "${sourceDir}/build/docker"
+    },
+    {
+      "name": "cpu-only",
+      "displayName": "No CUDA toolkit: fp64 CPU reference + ctest (runs on the Mac)",
+      "inherits": "base",
+      "cacheVariables": { "FA_ENABLE_CUDA": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "colab", "configurePreset": "colab" },
+    { "name": "vm", "configurePreset": "vm" },
+    { "name": "ci", "configurePreset": "ci" },
+    { "name": "docker", "configurePreset": "docker" },
+    { "name": "cpu-only", "configurePreset": "cpu-only" }
+  ],
+  "testPresets": [
+    { "name": "colab", "configurePreset": "colab", "output": { "outputOnFailure": true } },
+    { "name": "vm", "configurePreset": "vm", "output": { "outputOnFailure": true } },
+    { "name": "ci", "configurePreset": "ci", "output": { "outputOnFailure": true } },
+    { "name": "cpu-only", "configurePreset": "cpu-only", "output": { "outputOnFailure": true } }
+  ]
+}

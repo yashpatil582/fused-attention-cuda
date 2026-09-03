@@ -1,0 +1,58 @@
+# Nsight Compute metric IDs collected for every profiled kernel (judge_plan §4.5).
+# One ID per line; `#` starts a comment. profile.sh joins the uncommented lines with
+# `paste -sd,` and, on the first run per GPU, prunes them against `ncu --query-metrics`
+# into profiles/<gpu>/ncu_metrics.used.txt (dropped IDs are logged, never silently).
+#
+# VERIFIED IDs: quoted verbatim from the Nsight Compute 2022.4 CLI nvprof-mapping table
+# (Table 10) / Kernel Profiling Guide — see .research/tech-nsight-compute-ncu-*.json.
+#
+# --- DRAM traffic (S1->S3 headline: O(N^2) -> O(B*H*N*D)) ---
+dram__bytes.sum
+dram__bytes_read.sum
+dram__bytes_write.sum
+dram__throughput.avg.pct_of_peak_sustained_elapsed
+# --- occupancy / launch (launch__* needs no replay pass) ---
+sm__warps_active.avg.pct_of_peak_sustained_active
+launch__registers_per_thread
+# --- cache hit rates (S2: tile reuse) ---
+lts__t_sector_hit_rate.pct
+l1tex__t_sector_hit_rate.pct
+# --- shared-memory bank conflicts (S5a before/after) ---
+l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum
+l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_st.sum
+# --- global-load coalescing (S1 K^T pattern -> S2 float4 loads) ---
+smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct
+# --- tensor pipe (S4: 0 -> non-zero proves WMMA executes) ---
+sm__pipe_tensor_op_hmma_cycles_active.avg.pct_of_peak_sustained_active
+sm__inst_executed_pipe_tensor.sum
+# --- instruction count (S6 causal skipping should ~halve it) ---
+smsp__inst_executed.sum
+# --- warp stall reasons (top-3 in ncu_to_md.py) ---
+smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct
+smsp__warp_issue_stalled_barrier_per_warp_active.pct
+smsp__warp_issue_stalled_mio_throttle_per_warp_active.pct
+# --- time from cycles (roofline.py: time = cycles / per_second) ---
+sm__cycles_elapsed.avg
+sm__cycles_elapsed.avg.per_second
+# --- FLOP counters (flop_count_sp = fadd + fmul + 2*ffma; _hp likewise) ---
+smsp__sass_thread_inst_executed_op_fadd_pred_on.sum
+smsp__sass_thread_inst_executed_op_fmul_pred_on.sum
+smsp__sass_thread_inst_executed_op_ffma_pred_on.sum
+smsp__sass_thread_inst_executed_op_hadd_pred_on.sum
+smsp__sass_thread_inst_executed_op_hmul_pred_on.sum
+smsp__sass_thread_inst_executed_op_hfma_pred_on.sum
+# --- roofline peaks (NERSC recipe; no datasheet needed for FMA/DRAM roofs) ---
+dram__bytes.sum.peak_sustained
+dram__cycles_elapsed.avg.per_second
+sm__sass_thread_inst_executed_op_ffma_pred_on.sum.peak_sustained
+lts__t_bytes.sum
+l1tex__t_bytes.sum
+# --- Speed-of-Light SM % and kernel duration: base IDs listed by `ncu --query-metrics` on the
+# Colab T4 (PROBE 2, 2026-09-02, .research/colab_probe_2026-09-02.txt); the rollup suffixes are
+# the standard ones. profile.sh still prunes against the live query on every new GPU. ---
+sm__throughput.avg.pct_of_peak_sustained_elapsed
+gpu__time_duration.sum
+#
+# UNVERIFIED IDs (not quotable from a doc page and NOT in PROBE 2's grep output; enabled only
+# when profile.sh's prune finds them in `ncu --query-metrics` on the target):
+# gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed
