@@ -224,9 +224,50 @@ nor upstream flash-attention exists, which is why writing one by hand is not a t
 ## 12. Per-stage summaries (filled from STAGES.md)
 
 - S0: see `docs/STAGES.md` S0, 5-line summary and Q1/Q2.
-- S1: TBD
-- S2: TBD
-- S3: TBD
-- S4: TBD
+- **S1 — naive three kernels, fp32** (measured values in `docs/STAGES.md`):
+  1. Three kernels, one thread per element, everything through global memory — the way a first port
+     looks, so every later stage is a one-variable change against it.
+  2. The K loads are strided by D on purpose: adjacent threads own adjacent keys, so a warp touches 32
+     sectors and uses 4 bytes of each; that is what "uncoalesced" means and it shows up as
+     bytes-per-sector, not as an error.
+  3. The N×N score and probability matrices round-trip HBM, so `dram__bytes.sum` grows quadratically in
+     the sequence length while the tensors themselves are linear in it — the number FlashAttention's
+     IO argument is about.
+  4. Correctness is a differential test against an fp64 oracle with the FlashAttention ratio rule,
+     plus a CPU emulation of the index math, so the T4 run only had to catch layout and sync bugs.
+  5. It is a baseline, not a product: its job is to make the S2 and S3 deltas measurable.
+- **S2 — shared-memory tiled GEMMs + coalesced loads** (measured values in `docs/STAGES.md`):
+  1. Same math and the same N×N intermediates as S1; only the way bytes reach the SM changed.
+  2. Each block loads a 64×16 slice of Q and K into shared memory with 16-byte vector loads where
+     consecutive lanes are consecutive addresses, so a warp's request is four full 128-byte lines.
+  3. Every value that reaches a register feeds four FMAs (4×4 register tile), so the inner loop is
+     8 shared loads per 32 FMAs instead of 2 loads per FMA.
+  4. The unroll factor was chosen by the ptxas register report, not by taste: unroll 2 keeps 61
+     registers and four resident blocks; full unroll spills under a launch bound.
+  5. The bank conflicts on the K tile are left in deliberately — they are the measured "before" for the
+     S5a padding change.
+- **S3 — fused kernel, online softmax, FA2 loop order** (measured values in `docs/STAGES.md`):
+  1. The block owns a 64-row Q tile for its whole life and walks the keys in tiles; the score tile
+     lives in registers, so nothing of size N×N ever leaves the SM.
+  2. The softmax is computed online: keep a running max and a running sum per row; when a new tile
+     raises the max, multiply the old sum and the old accumulator by exp(old − new) — a factor in (0, 1]
+     — and add the new tile's contributions.
+  3. Normalisation is deferred to one divide per row at the end (FA2), which also means the `l = 0` guard
+     exists in exactly one place.
+  4. The measured effect is in DRAM bytes, not time: fp32 thread-per-row is register-heavy and
+     low-occupancy, and the profile says so.
+  5. Everything the kernel does is mirrored by a ten-line Python model with a tile-invariance test, so
+     the recurrence is defended on a whiteboard before it is defended in SASS.
+- **S4 — fp16 WMMA, fp32 accumulate** (measured values in `docs/STAGES.md`):
+  1. Both matmuls run on the tensor cores as 16×16×16 fp16 fragment products with fp32 accumulation;
+     Q fragments are hoisted out of the K/V loop and Kᵀ is free by declaring K column-major.
+  2. WMMA's fragment layout is opaque, so the softmax cannot index the accumulator; the score tile is
+     stored to shared memory, reduced there, and the probabilities go back in as an fp16 operand.
+  3. Each warp owns 16 rows end to end, which keeps the running max and sum warp-local and removes
+     every cross-warp barrier from the softmax.
+  4. The output accumulator must be rescaled by alpha per row, which is another round trip — skipped
+     by a warp vote once the max stops changing.
+  5. The tensor pipe metric is the proof this stage is real; the barrier and MIO stalls it introduces
+     are what S5 is for.
 - S5a / S5b: TBD
 - S6: TBD
