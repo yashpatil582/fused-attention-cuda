@@ -146,3 +146,16 @@ Running total: **$0.00** (cap ~$25). Colab T4 time used: ~5 GPU-hours across 202
 - 15b83a5: S5 D=128 default → WARPS=4 × BC=16 (168 registers, 59,904 B smem, 0 spills); local nvcc build
   clean; S5 re-run started on the T4 at 09:12 UTC to bench and profile the new default.
 
+### 2026-09-03 09:12–10:00 UTC — S5 re-run at 15b83a5 shows the tall D=128 tile is size-dependent; 371f406 picks by N
+
+- 15b83a5 (WARPS=4 × BC=16 at D=128 everywhere): GPU tests 47 passed, sanitizer clean, 48-config sweep,
+  2 Nsight captures (C128 kernel time 8.437 ms vs 9.887 ms with S4's tile), GPT block re-measured.
+- Against the d835758 sweep (S4's tile + prefetch) the tall tile is −2.7…−21 % at N ≥ 2048 but +2.5…+46 %
+  at N ≤ 1024 (B1_H8_N128: 0.062 vs 0.045 ms): half the grid, twice the K/V tiles, nothing for the prefetch
+  to amortise. An A/B at one config would have shipped a regression for every short sequence.
+- 371f406: `default_warps(D, N)` / `default_bc(D, N)` switch at `kTallTileMinN128 = 2048`; local nvcc build
+  clean; final S5 run (sweep + GPT + canonical pair under the 585 MHz lock) started 09:45 UTC.
+- Lesson recorded in STAGES.md S5 "Change 2b": `--sweep` replaces the canonical run in `gpu_run.sh`, so the
+  canonical pair is benchmarked separately after it (same clock lock) — the README canonical row and the
+  sweep rows must come from the same commit.
+

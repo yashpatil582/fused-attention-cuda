@@ -420,6 +420,278 @@ each row by 16 B rotates the bank of successive rows — the same idea as the `S
 cuda-samples' tensor-core GEMM. S5a records the conflict counter with and without it.
 
 ---
-## S5a — bank-conflict-free shared memory   (TBD)
-## S5b — warp-shuffle softmax   (TBD)
-## S6 — torch op dispatch, GPT block, causal block skipping   (TBD)
+## S5 — Nsight-guided tuning: register-staged K/V prefetch + block height   (branch `main`, commits 3ca2d8a / fe02818 (kernel + A/B script), 15b83a5 → 371f406 (D=128 tile chosen by N), date 2026-09-03, GPU Tesla T4)
+
+The plan's S5a (bank-conflict-free smem) and S5b (warp-shuffle softmax) were not built. S4's
+profile put neither at the top: the +8-half padding had already taken the S2-style 32-way conflicts
+off the table (4.9 M load conflicts against 47.7 M warp instructions at C64, values in
+`docs/INTERVIEW.md` §4) and S4's softmax already reduces over the row pair with `__shfl_xor_sync`.
+The two costs the profile did name are what S5 attacks.
+
+**Hypothesis.** (1) `smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct` = 11.4 % at
+C64 / 17.4 % at C128: S4 loads every K/V tile synchronously (LDG → STS → `__syncthreads`) and the
+whole block waits on DRAM latency at the top of every tile with nothing to issue. `cp.async` is the
+Ampere answer and does not exist on sm_75, so a register-staged double buffer — issue tile t+1's
+16-B loads into a `uint4` array right after tile t's RAW barrier, run tile t's S GEMM / softmax /
+P·V while they are in flight, store the registers to Ks/Vs after tile t's WAR barrier — should
+drive that stall toward 0 at the price of `2·BC·D/threads` halves of registers per thread, with 0
+spills as the gate. (2) `sm__warps_active.avg.pct_of_peak_sustained_active` = 12.5 % at C64 /
+6.25 % at C128: shared memory admits one block per SM, so the only occupancy lever left on a
+64 KB part is a taller block (more warps inside the one block), which also loads each K/V tile once
+for more query rows. Both knobs are template parameters, `fa_s5_tuned<T, D, WARPS, BC, PREFETCH>`
+(54 instantiations, every one its own `-Xptxas -v` line, `PREFETCH=false` at S4's WARPS reproduces
+S4's register count exactly — the proof that the off path is S4's code). Keep rule: ≥ 3 % on the
+canonical median with p10/p90 beside it, one knob per commit; a losing variant stays instantiated
+(`FA_FORCE_BR`, `FA_FORCE_BC`, `FA_S5_PREFETCH=0`) but is not the default.
+
+**ncu before.** S4 @ 3add37c (`profiles/t4/stage4_wmma*.raw.csv`, `--clock-control base`, 585 MHz):
+
+| | C64 (BR 64 / 4 warps / BC 64) | C128 (BR 32 / 2 warps / BC 32) |
+|---|---|---|
+| kernel time | 3.957 ms | 11.105 ms |
+| `long_scoreboard` stall | 11.38 % | 17.42 % |
+| `mio_throttle` / `barrier` stall | 19.61 % / 7.13 % | 8.68 % / 7.54 % |
+| tensor pipe active | 18.61 % | 13.36 % |
+| `sm__warps_active` | 12.52 % | 6.25 % |
+| registers / dynamic smem | 150 / 45,056 B | 168 / 43,008 B |
+| `dram__bytes.sum` | 19.13 MB | 38.41 MB |
+
+**Change 1 — PREFETCH, S4's tiles (kept).** `profiles/t4/stage5_tuned*.raw.csv` @ d835758:
+
+| | C64 | C128 (S4's tile + prefetch) |
+|---|---|---|
+| kernel time | 3.638 ms (−8.1 %) | 9.887 ms (−11.0 %) |
+| `long_scoreboard` stall | **0.85 %** | **0.41 %** |
+| `mio_throttle` / `barrier` stall | 22.09 % / 6.08 % | 13.55 % / 7.44 % |
+| tensor pipe active | 20.33 % | 14.87 % |
+| `sm__warps_active` | 12.49 % | 6.25 % |
+| registers | 168 (+18) | 254 (+86: at the ceiling, 0 spills) |
+| `smsp__inst_executed.sum` | 49.3 M (+3.3 %) | 85.5 M (+1.7 %) |
+| `dram__bytes.sum` | 19.25 MB | 38.37 MB |
+
+Bench (`bench/results/t4/stage5.csv` @ d835758, 585 MHz): C64 3.9442 → **3.6286 ms** (−8.0 %),
+C128 11.1697 → 9.8732 ms (−11.6 %). The stall moved exactly where the hypothesis said: the
+DRAM-latency wait is gone and the time went to the shared-memory pipe (`mio_throttle` up) — the S4
+round trips are now the top of the list. DRAM bytes are unchanged (same tiles, same traffic); the
+instruction count grows by the staging moves only.
+
+**Change 2 — block height, chosen by A/B.** `scripts/tune_s5.sh` →
+`bench/results/t4/stage5_tuning.csv` @ d835758: 22 variants at the canonical configs, fp16,
+585 MHz, ≥ 100 iterations each, ratio-rule check passing in every row. Medians in ms as
+`PREFETCH=0 / PREFETCH=1`:
+
+D=64 (S4 = 3.9442 ms):
+
+| BC \ BR | 32 (2 warps) | 64 (4 warps) | 128 (8 warps) |
+|---|---|---|---|
+| 16 | 4.878 / 4.724 | 4.394 / 4.298 | 4.936 / 4.759 |
+| 32 | 4.477 / 4.363 | 4.467 / 4.154 | 4.016 / 3.837 |
+| 64 | 3.954 / 3.838 | 3.943 / **3.638** | — (71,680 B > 64 KB) |
+
+D=128 (S4 = 11.1697 ms):
+
+| BC \ BR | 32 (2 warps) | 64 (4 warps) |
+|---|---|---|
+| 16 | 13.372 / 12.094 | 8.995 / **8.453** |
+| 32 | 11.164 / 9.882 | — (68,608 B > 64 KB) |
+
+Reading. Prefetch wins in all 11 pairs (3–12 %). At D=64 the tallest block (8 warps, BR 128) can
+only afford BC ≤ 32, and halving BC doubles the K/V tiles, the barriers and the S round trips per
+query row; 8 resident warps instead of 4 do not pay for that (3.837 vs 3.638 ms), so S4's
+BR 64 / BC 64 with prefetch stays the default (`kDefaultWarps64 = 4`). At D=128 S4's block was only
+2 warps: BR 64 / BC 16 (4 warps, 59,904 B, opt-in) beats S4's tile with prefetch by **14.5 %**
+(8.453 vs 9.882 ms) and S4 itself by 24.3 %, past the keep rule, so 15b83a5 made it the default —
+at 168 registers instead of the 254 the S4 tile needed once prefetch was on.
+
+**Change 2b — the sweep says the tall tile is a size trade-off (371f406).** The A/B ran at the
+canonical N=2048 only. The 48-config sweep at 15b83a5 (tall tile everywhere) against the same
+sweep at d835758 (S4's tile everywhere), both with prefetch, `bench/results/t4/stage5.csv`,
+D=128, dense rows, ms:
+
+| N | B1_H8: S4 tile → tall | B8_H32: S4 tile → tall |
+|---|---|---|
+| 128 | 0.0447 → 0.0620 (+39 %) | 0.938 → 1.047 (+12 %) |
+| 256 | 0.1409 → 0.1577 (+12 %) | 3.328 → 3.652 (+10 %) |
+| 512 | 0.4713 → 0.4937 (+5 %) | 11.99 → 12.28 (+2.5 %) |
+| 1024 | 1.4845 → 1.5557 (+5 %) | 43.19 → 40.25 (−7 %) |
+| 2048 | 4.954 → 4.532 (−8.5 %) | 154.7 → 132.2 (−14.5 %) |
+| 4096 | 17.85 → 14.23 (−20 %) | 562.1 → 445.6 (−21 %) |
+
+Causal rows move the same way (+29…+46 % at N ≤ 256, −2.7…−16 % at N ≥ 2048). Why: at small N the
+tall block halves the grid (16 blocks < 40 SMs at B1_H8_N128) and BC 16 doubles the K/V tiles —
+twice the barriers and S round trips per query row — with too few tiles for the prefetch to
+amortise; from N = 2048 the grid is full and the halved per-row K/V traffic and 4 resident warps
+win. The crossover is between 1024 and 2048 (mixed at 1024), so 371f406 picks the tile by N:
+`kTallTileMinN128 = 2048` — WARPS 4 / BC 16 from N = 2048 up, S4's WARPS 2 / BC 32 below
+(`default_warps(D, N)`, `default_bc(D, N)`; `FA_FORCE_BR/BC` override both). No autotuner: one
+threshold, read off a committed sweep, and every row of the 371f406 sweep is the tile the rule
+picks. S4's tile stays reachable at any N through `FA_FORCE_BR=32 FA_FORCE_BC=32`.
+
+**ncu after (15b83a5, the D=128 tile 371f406 selects from N = 2048 up).**
+`profiles/t4/stage5_tuned_C128.raw.csv` @ 15b83a5; C64 is unchanged by the rule (3.643 ms,
+0.86 % `long_scoreboard`, 12.51 % warps active):
+
+| C128 | S4's tile + prefetch (d835758) | tall tile (15b83a5) |
+|---|---|---|
+| kernel time | 9.887 ms | **8.437 ms** (−14.7 %; −24.0 % vs S4's 11.105) |
+| `sm__warps_active` | 6.25 % | **12.51 %** |
+| `lts__t_bytes.sum` | 1,091 MB | **554 MB** (K/V re-reads per head halve with BR) |
+| `dram__bytes.sum` | 38.37 MB | 38.28 MB |
+| `long_scoreboard` stall | 0.41 % | 0.61 % |
+| `barrier` / `mio_throttle` stall | 7.44 % / 13.55 % | 18.32 % / 18.19 % |
+| tensor pipe active | 14.87 % | 17.42 % |
+| registers / dynamic smem | 254 / 43,008 B | 168 / 59,904 B |
+| `smsp__inst_executed.sum` | 85.5 M | 94.5 M (+10.5 %: twice the tiles) |
+
+Reading: the win is L2 traffic (halved) plus four resident warps instead of two; the price is the
+barrier share (four warps meet at twice as many barriers, 7.4 → 18.3 %), which is exactly what
+turns into a loss when N is small and the tiles are few.
+
+**Bench delta.** `bench/results/t4/stage5.csv`, 585 MHz. C64: S4 3.9442 → **3.6286 ms**
+(−8.0 %, 4.74 TFLOP/s, **69 %** of SDPA EFFICIENT fp16 at 2.4860 ms), unchanged by 371f406.
+C128 at the canonical config: S4 11.1697 → 9.8732 ms with S4's tile + prefetch (the d835758
+default row, −11.6 %) → **8.4526 ms** with the tile 371f406 selects there
+(`stage5_tuning.csv` br64_bc16_pf1, −24.3 % vs S4; the Nsight capture of the same tile reads
+8.437 ms) = **59 %** of SDPA (5.0012 ms). One measurement in this entry is still pending: the
+`bench.py --cfg canonical` row stamped 371f406 — that run was cut at the bench step by the Colab
+session limit and the free GPU quota was then exhausted (`docs/WORKLOG.md`); every per-config
+number the size rule produces is otherwise already a committed row (d835758 rows for N < 2048,
+15b83a5 rows for N ≥ 2048). Whole ladder at C64: 410.6 → 59.2 → 25.1 → 3.94 → 3.63 ms = **113×**
+from naive; at C128: 817.1 → 115.8 → 94.3 → 11.17 → 8.45 ms = 97×.
+
+**Decision.** Kept, both knobs, defaults as above. Rejected and kept instantiated: WARPS 8 at D=64
+(−5.5 % against the default), WARPS 2 everywhere, every `PREFETCH=0` variant.
+
+**Known limitations.** `mio_throttle` is now the top stall at both configs: the S store/reload and
+the O rescale round trip of the WMMA design are the wall, and only the `mma.sync` + `ldmatrix`
+rewrite (register-resident S with the documented lane map) removes them — out of window. One block
+per SM at every default tile; the 22-variant grid is the whole search space a 64 KB part allows, no
+autotuner. Prefetch holds 16–64 halves per thread across the tile body, which is why the D=128 S4
+tile went to 254 registers with it and why WARPS=1 / BC=64 at D=64 is the one dropped variant
+(ptxas 255 registers, 56 B spill stores; `kPrefetchOk<64, 1, 64> = false`).
+
+**Go / no-go for S6.** Go: `torch.ops.fused_attn.forward` dispatches fp16 to S5 and the GPU op
+tests pass at this commit.
+
+**5-line summary.**
+1. The S4 profile said DRAM latency (`long_scoreboard`) and a single resident block — not the
+   tensor pipe — were the next costs; S5 attacks exactly those two, each as a template knob so
+   every variant has its own ptxas line and its own profile.
+2. Turing has no `cp.async`, so the double buffer is hand-rolled through registers: tile t+1's
+   loads are issued before tile t's math and stored to shared memory after its last reader passed;
+   the stall fell from 11–17 % to under 1 %.
+3. Registers are the price (150 → 168, and 168 → 254 on S4's D=128 tile) and 0 spills is the gate;
+   the A/B, not the reasoning, chose the defaults.
+4. Taller blocks lose at D=64 because they force smaller K/V tiles (more barriers per row) and win
+   at D=128 where S4's block was only 2 warps — but only once the grid is full (−14.5 % at N=2048,
+   −20 % at 4096, +39 % at N=128), so the D=128 tile is chosen by N with one sweep-derived threshold.
+5. What is left is `mio_throttle` — the WMMA round trips — which is the register-resident
+   `mma.sync` design FlashAttention-2 uses and the stated next step.
+
+**Two questions.**
+
+*Q1: Why not double-buffer in shared memory like cuda-samples' pipelined GEMMs?*
+The budget. A second K/V buffer at the default tiles is +22.5 KB (D=64) / +18 KB (D=128) on top of
+45 KB / 43 KB — past the 64 KB Turing cap at D=64 and leaving no room for a taller block at
+D=128; registers were the only free store. `cp.async` on Ampere gets both (no register cost, L1
+bypass), which is why that path is the first item on the sm_80+ list rather than a Turing knob.
+
+*Q2: The prefetch loads are issued in program order before the MMA section — how do you know
+ptxas kept them there under register pressure?*
+By the metric, not the source. If ptxas had sunk the LDGs toward their STS the overlap would vanish
+and `long_scoreboard` would stay; it went to 0.4–0.85 %, and it is 0.41 % even at the 254-register
+D=128 variant. `cuobjdump -sass` is the second check and would have been the first thing to open
+had the metric not moved.
+
+---
+
+## S6 — torch op dispatch, GPT block, causal accounting   (branch `main`, commits 83cb449 (op, S0) → 15b83a5 (measurements), date 2026-09-03, GPU Tesla T4)
+
+**What.** `python/fused_attn/ext.cpp` registers `fused_attn::forward(Tensor q, Tensor k, Tensor v,
+bool is_causal, float scale) -> Tensor` and `forward_stage(..., int stage) -> (Tensor, Tensor)`
+(O and LSE) with `TORCH_LIBRARY`, a `register_fake` meta kernel, and
+`impl_supports(stage, dtype, D)`. `forward` picks the highest stage that
+`fa::impl_supports(stage, dtype, D, sm)` accepts on the current device — fp16 at D 64/128 → S5,
+fp32 → S3, bf16 → S5 on sm_80+ only — so the op is the ladder's best kernel for the dtype without
+the caller naming a stage. Inputs must be contiguous `[B, H, N, D]` (16-B rows); the op never
+copies, the caller sees the copy.
+
+**Tests (`tests/test_op_gpu.py`, T4).** Per-stage ratio-rule accuracy against the fp64 oracle and
+the LSE check through the op, `torch.library.opcheck` (schema, fake kernel, autograd-not-implemented),
+`torch.compile(fullgraph=True)` with no graph break, and the dispatch table per (dtype, D). Green on
+every stage run (`pytest-gpu` line of `build/gpu_run_stage<N>.log`: 15b83a5 and 371f406: 47 passed, 31 skipped — the bf16 cases, absent on sm_75 by design — 1 xpassed: GQA heads already work through `kv_head = h / (H / Hkv)`).
+
+**GPT block (`bench/gpt_block.py` → `bench/results/t4/gpt_block.csv`, README "End-to-end GPT
+block").** nanoGPT-style block, n_embd 768, 12 heads (D 64), T 1024, batch 8, fp16, causal,
+inference, 50 timed iterations after warmup, clocks locked at 585 MHz, one CUDA-event pair around
+the block and a second around the attention call. Measured twice: @ d835758 SDPA 855,987 tok/s (block 9.570 ms, attention 2.036 ms = 21.3 %) vs
+our op 702,728 tok/s (11.657 ms, attention 4.116 ms = 35.3 %); @ 15b83a5 815,921 vs 703,077 tok/s
+(10.040 / 11.652 ms; attention 2.148 / 4.118 ms). SDPA's block moved 5 % between runs, ours did
+not (the D=64 path, untouched by the D=128 tile rule). The attention window around our
+call includes the three `.contiguous()` copies the op needs after the head-split transpose (SDPA
+consumes the strided views directly) — on purpose: that is the binding-boundary cost the number is
+meant to expose. Honest reading: inside a real block our kernel costs about a fifth of the tokens/s
+against the vendor kernel on this GPU, consistent with the standalone causal rows (S5 at
+`B8_H32_N1024_D64` causal is 61 % of SDPA EFFICIENT, `B1_H8_N1024_D64` 77 %).
+
+**Causal accounting.** Skipping fully-masked K/V tiles by loop bound has been in every fused stage
+since S3 (`kv_end = causal ? min(i0 + BR, N) : N`); the diagonal tile is masked element-wise, the
+interior runs with no mask instruction. Measured on the sweep (`stage5.csv` @ d835758): causal /
+dense time at fixed shape = **1.73–1.87×** over N ∈ {1024, 2048, 4096}, D ∈ {64, 128}, B·H ∈
+{8, 256} — FA2's "around 1.7–1.8×" reproduced, below 2× for the `(n+1)/(2n)` + diagonal-tile
+reason. Accounting per CONTRACT §5: causal rows of tile-skipping kernels are credited half of
+`4·B·H·N²·D` (`flops=causal_half`, from a9681a6 on); rows benchmarked before that convention
+(S1–S4 sweeps at 3add37c) still say `flops=full`; materialising kernels always keep the full count.
+
+**Decision.** Kept as measured. Not done: a separate causal kernel variant (the last-tile masking
+cost was not profiled on its own), GQA through the op (the kernels accept `Hkv`, the op exposes
+`Nq == Nkv`, `H == Hkv` only).
+
+**5-line summary.**
+1. One op, one schema, dispatch by capability: the highest stage that supports (dtype, D, sm) runs,
+   so the ladder's best kernel is what PyTorch users get without naming a stage.
+2. `register_fake` + `opcheck` + a `fullgraph=True` compile test are the difference between "it
+   runs" and "it composes with torch.compile"; all three pass on the T4.
+3. The GPT-block number is measured with our binding-boundary copies inside the window, so it is
+   the cost a user would pay, not the kernel's best case.
+4. Causal skipping is a loop bound, not a branch per element; it gives 1.73–1.87× and is credited
+   half the FLOPs only from the commit where the convention was written down.
+5. The block still runs faster on SDPA than on our kernel on this GPU; the number is committed
+   because the docs promise measurements, not wins.
+
+**Two questions.**
+
+*Q1: Why does `torch.compile` need a fake kernel for a custom op?*
+Dynamo traces with FakeTensors: it has to know the output's shape/dtype/device without running the
+CUDA kernel. Without `register_fake` the op is a graph break (the compiled region ends before the
+call and restarts after it) and `fullgraph=True` raises. `opcheck` exercises exactly that contract —
+schema, fake kernel, and that autograd is declared unimplemented rather than silently wrong.
+
+*Q2: Why are the `.contiguous()` copies inside the timed window instead of excluded as "not the
+kernel"?*
+Because a user of the op pays them. SDPA's memory-efficient kernel takes the strided views nanoGPT
+produces; ours needs `[B, H, N, D]` rows 16-B aligned and contiguous. Excluding the copies would
+report a kernel that does not exist in the block. The fix — accepting strided inputs, or fusing
+the head split — is the next step and would be measured by the same window shrinking.
+
+---
+
+## S7 — docs, roofline, evidence   (branch `main`, commits 05ee981 → HEAD, date 2026-09-03)
+
+**What.** `docs/img/roofline_t4.png` from `scripts/roofline.py` (one point per stage and
+canonical config; FMA and DRAM roofs from ncu's `.peak_sustained` counters at the 585 MHz profile
+clock: 2.99 TFLOP/s fp32, 320 GB/s; fp16 tensor roof from the datasheet, labelled spec). Reading:
+S1–S3 sit under the FMA roof (S1 at 1.4 % of it), S4/S5 cross it because their FLOPs run on the
+tensor pipe, whose roof is ~22× higher; at AI ≈ 900 FLOP/byte every fused stage is compute-side
+of the ridge, so the remaining gap to SDPA is issue and latency, not bandwidth. The FFMA-counter
+cross-check of the analytic FLOP count holds for the fp32 stages (ratio 1.02–1.11) and is labelled
+inapplicable for S4/S5 (HMMA FLOPs are invisible to it). Evidence: 5 stage CSVs + sweeps, 20 Nsight
+raw captures with `.meta` provenance, sanitizer logs, the S5 A/B, the GPT block; README tables,
+`docs/generated/ncu_stage*.md` and the figure are regenerated from those files and
+`tests/test_docs_cpu.py` fails CI if they drift. Transport: no PAT on the runtime, so results left
+the Colab VM as a sha256-verified xz/base64 blob (`docs/WORKLOG.md`); the `.ncu-rep` binaries
+stayed on the VM.
+
+**Known limitations.** No Nsight Systems timeline (missing on Colab); no sm_80+ row; the
+`.ncu-rep` files are not in the repo, the raw CSVs are.
+

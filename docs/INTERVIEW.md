@@ -165,8 +165,9 @@ plus the S strip), so `64 KB / 33 KB = 1` block and the achieved
 `sm__warps_active.avg.pct_of_peak_sustained_active` is **6.26 %** = 2 warps at `d = 64` and 6.25 %
 at `d = 128` (49,408 B, > 48 KB, launched through the opt-in). S4: 12.52 % (one 4-warp block,
 45,056 B) at `d = 64`, 6.25 % (one 2-warp block, 43,008 B) at `d = 128`. S5 keeps 12.49 % at
-`d = 64` and raises `d = 128` to a 4-warp block (BR = 64, BC = 16, 59,904 B, opt-in) — the
-achieved value of that tile is in `docs/STAGES.md` S5. Registers never bind before shared memory
+`d = 64` and raises `d = 128` to a 4-warp block from N = 2048 up (BR = 64, BC = 16, 59,904 B,
+opt-in; S4's 2-warp tile below that, where the sweep showed the tall tile losing) — the achieved
+value of that tile is in `docs/STAGES.md` S5. Registers never bind before shared memory
 on any of these (`launch__occupancy_limit_registers` 3-6 blocks vs `_shared_mem` 1).
 
 ## 7. Why FA3 is Hopper-only
@@ -296,5 +297,28 @@ nor upstream flash-attention exists, which is why writing one by hand is not a t
      by a warp vote once the max stops changing.
   5. The tensor pipe metric is the proof this stage is real; the barrier and MIO stalls it introduces
      are what S5 is for.
-- S5a / S5b: TBD
-- S6: TBD
+- **S5 — register-staged K/V prefetch + block height** (measured values in `docs/STAGES.md`):
+  1. The S4 profile said DRAM latency (`long_scoreboard`) and a single resident block — not the
+     tensor pipe — were the next costs; S5 attacks exactly those two, each as a template knob so
+     every variant has its own ptxas line and its own profile.
+  2. Turing has no `cp.async`, so the double buffer is hand-rolled through registers: tile t+1's
+     loads are issued before tile t's math and stored to shared memory after its last reader passed;
+     the stall fell from 11–17 % to under 1 %.
+  3. Registers are the price (150 → 168, and 168 → 254 on S4's D=128 tile) and 0 spills is the
+     gate; the A/B, not the reasoning, chose the defaults.
+  4. Taller blocks lose at D=64 because they force smaller K/V tiles (more barriers per row) and
+     win at D=128 where S4's block was only 2 warps — but only once the grid is full (−14.5 % at
+     N=2048, +39 % at N=128), so the D=128 tile is chosen by N with one sweep-derived threshold.
+  5. What is left is `mio_throttle` — the WMMA round trips — which is the register-resident
+     `mma.sync` design FlashAttention-2 uses and the stated next step.
+- **S6 — torch op dispatch, GPT block, causal accounting**:
+  1. One op, one schema, dispatch by capability: the highest stage that supports (dtype, D, sm)
+     runs, so the ladder's best kernel is what PyTorch users get without naming a stage.
+  2. `register_fake` + `opcheck` + a `fullgraph=True` compile test are the difference between "it
+     runs" and "it composes with torch.compile"; all three pass on the T4.
+  3. The GPT-block number is measured with our binding-boundary copies inside the window, so it is
+     the cost a user would pay, not the kernel's best case.
+  4. Causal skipping is a loop bound, not a branch per element; it gives 1.73–1.87× and is credited
+     half the FLOPs only from the commit where the convention was written down.
+  5. The block still runs faster on SDPA than on our kernel on this GPU; the number is committed
+     because the docs promise measurements, not wins.
