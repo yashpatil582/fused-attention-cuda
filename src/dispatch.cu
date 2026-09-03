@@ -48,7 +48,8 @@ struct StageEntry {
 };
 
 // ======================= STAGE REGISTRY (one line per stage) =============================
-// Implemented: S1 (Impl::Naive), S2 (Impl::Tiled), S3 (Impl::Fused), S4 (Impl::Wmma).
+// Implemented: S1 (Impl::Naive), S2 (Impl::Tiled), S3 (Impl::Fused), S4 (Impl::Wmma),
+// S5 (Impl::Tuned).
 // Unregistered stages (nullptr pairs) make forward() return cudaErrorNotSupported and
 // impl_supports() false. When stage N lands, replace its pair with {Impl::X, stageN::forward,
 // stageN::supports} and add src/stageN_*.cu to sources.txt.
@@ -57,7 +58,7 @@ static const StageEntry kStages[] = {
     {Impl::Tiled, stage2::forward, stage2::supports},  // S2: src/stage2_tiled.cu
     {Impl::Fused, stage3::forward, stage3::supports},  // S3: src/stage3_fused.cu
     {Impl::Wmma, stage4::forward, stage4::supports},   // S4: src/stage4_wmma.cu
-    {Impl::Tuned, nullptr, nullptr},  // S5 -> {Impl::Tuned, stage5::forward, stage5::supports}
+    {Impl::Tuned, stage5::forward, stage5::supports},  // S5: src/stage5_tuned.cu
 };
 // ========================================================================================
 
