@@ -1300,8 +1300,9 @@ Deferred, in the order they would be picked up (each its own PR with a STOP summ
 
 1. **Ampere/Ada rows**: bf16 WMMA, `cp.async` double buffering, `SDPBackend.FLASH_ATTENTION` and
    `flash_attn_func` as baselines, per-arch `TileCfg`, locked clocks — needs an sm_80+ VM.
-2. **Causal block skipping** (if not landed in S6) with the exact `(n+1)/(2n)` FLOP fraction, and
-   **GQA/MQA** via `kv_head = q_head / (H / Hkv)` tested against `enable_gqa=True`.
+2. **GQA/MQA through the op** via `kv_head = q_head / (H / Hkv)` tested against `enable_gqa=True`
+   (the kernels already take `Hkv`; the S5 GPU suite xpasses it), and **strided inputs** so the
+   GPT-block window no longer pays three `.contiguous()` copies (docs/STAGES.md S6).
 3. **FA2 split-Q warp partitioning with `mma.sync` + `ldmatrix`**: keeps S in registers and removes
    the WMMA smem round trip; needs the documented m16n8k8 lane map on sm_75.
 4. **Tile sweep and `__launch_bounds__`** into a generated `tile_config.h` (FA2 leaves autotuning as
