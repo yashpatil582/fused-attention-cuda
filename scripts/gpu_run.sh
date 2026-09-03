@@ -53,7 +53,7 @@ DATE_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 STEP=start; FAILED=""; BUILD=not-run; CTEST=not-run; SANITIZER=not-run; PYTEST=not-run
 NCU_VERDICT=not-run; PUSH_STATUS=skipped; BENCH_STATUS=not-run; PROFILE_STATUS=not-run
 LOCKED=0; LOCK_MHZ=""; CLOCK_STATUS="not attempted"
-GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo unknown)
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo unknown) || true  # head closes the pipe early; under pipefail that is exit 141
 
 summary() {
   # The trap inherits `set -euo pipefail`; nothing in here may abort the summary itself.
@@ -63,7 +63,7 @@ summary() {
   echo "gpu: $GPU ($GPU_NAME)  sha: $SHA  branch: $BRANCH  stage: $STAGE  mode: $MODE"
   echo "build: $BUILD"
   if [ -s "$OUT/stage${STAGE}_ptxas.txt" ]; then
-    "$PY" - "$OUT/stage${STAGE}_ptxas.txt" <<'PYEOF' | head -8
+    "$PY" - "$OUT/stage${STAGE}_ptxas.txt" <<'PYEOF' | head -8 || true  # head closes the pipe early; under pipefail that is exit 141
 import re, sys
 name, spill, lines = None, "spill=n/a", []
 for line in open(sys.argv[1]):
@@ -87,8 +87,8 @@ PYEOF
   echo "pytest(gpu): $PYTEST"
   echo "clocks: $CLOCK_STATUS"
   echo "bench: $BENCH_STATUS"
-  if [ -f build/bench.log ]; then grep -E '^BENCH_ROW' build/bench.log | grep -E 'impl=(naive|tiled|fused|wmma|tuned|sdpa_efficient) ' | sed -E 's/^BENCH_ROW /  /; s/ p10=[^ ]* p90=[^ ]*//' | head -12; fi
-  if [ -f build/gpt.log ]; then grep -E '^GPT_ROW' build/gpt.log | sed 's/^GPT_ROW /  gpt: /' | head -3; fi
+  if [ -f build/bench.log ]; then grep -E '^BENCH_ROW' build/bench.log | grep -E 'impl=(naive|tiled|fused|wmma|tuned|sdpa_efficient) ' | sed -E 's/^BENCH_ROW /  /; s/ p10=[^ ]* p90=[^ ]*//' | head -12; fi || true  # head closes the pipe early; under pipefail that is exit 141
+  if [ -f build/gpt.log ]; then grep -E '^GPT_ROW' build/gpt.log | sed 's/^GPT_ROW /  gpt: /' | head -3; fi || true  # head closes the pipe early; under pipefail that is exit 141
   echo "ncu: $NCU_VERDICT; profiles: $(ls "$PROF"/stage${STAGE}_*.raw.csv 2>/dev/null | wc -l | tr -d ' ') raw csv; $PROFILE_STATUS"
   [ -f "$PROF/stage${STAGE}.profiler.txt" ] && echo "profiler.txt: $(head -1 "$PROF/stage${STAGE}.profiler.txt" | cut -c1-120)"
   echo "push: $PUSH_STATUS"
@@ -111,9 +111,9 @@ step env
   nvidia-smi --query-gpu=name,driver_version,compute_cap,memory.total,clocks.max.sm,clocks.sm,clocks.default_applications.graphics --format=csv 2>&1 || echo "nvidia-smi=missing"
   nvcc --version 2>/dev/null | tail -1 || echo "nvcc=missing"
   "$PY" -c "import torch;print('torch',torch.__version__,'cuda',torch.version.cuda,torch.cuda.get_arch_list())" 2>&1 || echo "torch=missing"
-  (ncu --version 2>/dev/null | head -1) || echo "ncu=missing"
-  (nsys --version 2>/dev/null | head -1 | sed 's/^/nsys /') || echo "nsys=missing"
-  (cmake --version 2>/dev/null | head -1) || echo "cmake=missing"
+  (ncu --version 2>/dev/null | head -1) || echo "ncu=missing" || true  # head closes the pipe early; under pipefail that is exit 141
+  (nsys --version 2>/dev/null | head -1 | sed 's/^/nsys /') || echo "nsys=missing" || true  # head closes the pipe early; under pipefail that is exit 141
+  (cmake --version 2>/dev/null | head -1) || echo "cmake=missing" || true  # head closes the pipe early; under pipefail that is exit 141
   echo "compute-sanitizer=$(command -v compute-sanitizer || ls /usr/local/cuda/bin/compute-sanitizer 2>/dev/null || echo missing)"
 } > "$OUT/env.txt"
 cat "$OUT/env.txt"
@@ -211,7 +211,7 @@ lock_clocks() {
   # BENCHMARK_PROTOCOL rule 4: lock the SM clock to the driver's default application clock
   # (the base clock ncu --clock-control base uses; 585 MHz on T4), read from the driver, never
   # typed. Refusal (no root, unsupported) is recorded and the rows say clock=unlocked.
-  LOCK_MHZ=$(nvidia-smi --query-gpu=clocks.default_applications.graphics --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
+  LOCK_MHZ=$(nvidia-smi --query-gpu=clocks.default_applications.graphics --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ') || true  # head closes the pipe early; under pipefail that is exit 141
   if ! [[ "$LOCK_MHZ" =~ ^[0-9]+$ ]]; then
     LOCK_MHZ=$(nvidia-smi -q -d CLOCK 2>/dev/null | awk '/Default Applications Clocks/{f=1;next} f&&/Graphics/{print $3; exit}')
   fi
@@ -234,7 +234,7 @@ elif [ "$MODE" = full ]; then
   [ "$SWEEP" = 1 ] && BENCH_ARGS+=(--sweep --causal both)   # CONTRACT §5: the sweep includes causal 0 and 1
   [ "$LOCKED" = 1 ] && BENCH_ARGS+=(--clock-locked "$LOCK_MHZ")   # bench.py verifies the lock per row
   set +e; "$PY" bench/bench.py "${BENCH_ARGS[@]}" > build/bench.log 2>&1; rc=$?; set -e
-  grep -E '^(BENCH_ROW|\[bench\])' build/bench.log | head -60
+  grep -E '^(BENCH_ROW|\[bench\])' build/bench.log | head -60 || true  # head closes the pipe early; under pipefail that is exit 141
   BENCH_STATUS="$(grep -c '^BENCH_ROW' build/bench.log || true) rows -> $OUT/stage${STAGE}.csv (rc=$rc)"
   [ $rc -ne 0 ] && { tail -20 build/bench.log; exit $rc; }
   if [ "$GPT" = 1 ]; then
