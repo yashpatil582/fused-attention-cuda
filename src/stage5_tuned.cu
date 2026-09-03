@@ -151,7 +151,8 @@
 //   FA_FORCE_BR (dbg.block_m)  BR = 16*WARPS: 16/32/64/128 -> WARPS 1/2/4/8 (16 exists for D=64
 //                              only: test_tile_invariance asks for (BR, BC) = (16, 16) at N=64);
 //                              0 -> S4's choice, 64 (4 warps) for D=64 and 32 (2 warps) for D=128.
-//   FA_FORCE_BC (dbg.block_n)  as in S4: 16/32/64 at D=64, 16/32 at D=128; 0 -> S4's default
+//   FA_FORCE_BC (dbg.block_n)  as in S4: 16/32/64 at D=64, 16/32 at D=128; 0 -> the stage default
+//                              (S4's 64 at D=64, the tuned 16 at D=128)
 //                              (TileCfg<kArchTuring, D>::kBcF16: 64 for D=64, 32 for D=128).
 //   FA_S5_PREFETCH             unset or 1 -> register-staged prefetch on; 0 -> off (S4 path).
 //                              Read once per process (getenv), like FA_VERBOSE.
@@ -187,8 +188,10 @@
 // KEEP RULE (docs/STAGES.md S5 entries, .research/PLAN.md S5a row): each S5 commit changes ONE
 // thing and keeps it only if it wins >= 3% on the median at the canonical config with p10/p90
 // shown next to it; a knob that loses stays instantiated (it is the "tried and rejected"
-// sub-entry with its profile) but is not the default. Defaults here are S4's until a T4
-// measurement says otherwise — no number in this file is a claim about speed.
+// sub-entry with its profile) but is not the default. Defaults: D=64 is S4's tile with PREFETCH
+// on (no block height beat it in the A/B); D=128 is WARPS=4/BC=16/PREFETCH on, picked by the T4
+// A/B quoted at kDefaultWarps128 — those two ms figures are the only speed claims in this file
+// and they point at the committed CSV.
 //
 // LIMITS: gridDim.y = B*H <= 65,535; q/k/v/o 16-B aligned (rows are 128 B / 256 B, so every tile
 // base and every 16-B vector inherits it); N % 32 == 0 (contract); bf16 needs sm_80+ — the
@@ -222,9 +225,15 @@ constexpr int kPadF = TileCfg<kArchTuring, 64>::kSPad;    // +4 floats = 16 B pe
 constexpr int kVecElems = 8;                              // one 16-B vector = 8 halves/bf16
 constexpr unsigned kFullMask = 0xffffffffu;
 
-// S4's block heights, the defaults when FA_FORCE_BR is 0 (stage4_wmma.cu Cfg::kBr / kFrag).
+// Block heights when FA_FORCE_BR is 0. D=64 keeps S4's 4 warps (BR=64): the T4 A/B found no
+// taller/shorter block that beats it. D=128 moves from S4's 2 warps to 4 (BR=64, with BC=16
+// below) on the A/B of 2026-09-03 (bench/results/t4/stage5_tuning.csv, commit d835758, canonical
+// B2_H8_N2048_D128, 585 MHz): br64_bc16_pf1 8.4526 ms vs br32_bc32_pf1 9.8815 ms (S4's tile with
+// prefetch) = -14.5% on the median, past the 3% keep rule; S4's tile stays reachable through
+// FA_FORCE_BR=32 FA_FORCE_BC=32.
 constexpr int kDefaultWarps64 = 4;
-constexpr int kDefaultWarps128 = 2;
+constexpr int kDefaultWarps128 = 4;
+constexpr int kDefaultBc128 = 16;  // WARPS=4/BC=16: 59,904 B smem (opt-in), 168 regs, 0 spills
 static_assert(TileCfg<kArchTuring, 64>::kBrF16 / kFrag == kDefaultWarps64,
               "S5 D=64 default WARPS drifted from tile_config.h");
 
@@ -756,11 +765,10 @@ bool prefetch_enabled() {
 }
 
 int default_bc(int D) {
-  // S4's defaults live in tile_config.h (64 for D=64, 32 for D=128); static_assert keeps the two
-  // files from drifting apart.
+  // D=64 keeps S4's BC from tile_config.h (the static_assert keeps the two files from drifting);
+  // D=128 uses the tuned BC=16 (see kDefaultWarps128). S4's 32 stays reachable via FA_FORCE_BC.
   static_assert(TileCfg<kArchTuring, 64>::kBcF16 == 64, "S5 D=64 default BC drifted");
-  static_assert(TileCfg<kArchTuring, 128>::kBcF16 == 32, "S5 D=128 default BC drifted");
-  return D == 64 ? TileCfg<kArchTuring, 64>::kBcF16 : TileCfg<kArchTuring, 128>::kBcF16;
+  return D == 64 ? TileCfg<kArchTuring, 64>::kBcF16 : kDefaultBc128;
 }
 
 int default_warps(int D) {

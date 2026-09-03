@@ -164,7 +164,7 @@ def render_bench(results_dir: Path) -> str:
     out = [
         "Median ms per forward call (lower is better); one CUDA-event pair per iteration, 256 MB",
         "L2 flush before every timed iteration, >=100 iterations after >=10 warmup. Every column",
-        "is the stage's DEFAULT tile configuration (the S5 A/B sweep lives in `stage5_tuning.csv`).",
+        "is the stage's DEFAULT tile configuration (the S5 A/B sweep is `stage5_tuning.csv`).",
         "TFLOP/s in the CSVs use 4·B·H·N²·D; causal rows are credited half of that",
         "(`flops=causal_half`, CONTRACT §5) only in rows benchmarked after that convention landed",
         "(S5 onward) — earlier sweep rows carry `flops=full`. Speed baseline is SDPA pinned to",
