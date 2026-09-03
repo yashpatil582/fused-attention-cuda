@@ -3,3 +3,4 @@ src/smoke.cu
 src/stage1_naive.cu
 src/stage2_tiled.cu
 src/stage3_fused.cu
+src/stage4_wmma.cu
