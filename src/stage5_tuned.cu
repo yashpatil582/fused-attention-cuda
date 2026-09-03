@@ -152,7 +152,7 @@
 //                              only: test_tile_invariance asks for (BR, BC) = (16, 16) at N=64);
 //                              0 -> S4's choice, 64 (4 warps) for D=64 and 32 (2 warps) for D=128.
 //   FA_FORCE_BC (dbg.block_n)  as in S4: 16/32/64 at D=64, 16/32 at D=128; 0 -> the stage default
-//                              (S4's 64 at D=64, the tuned 16 at D=128)
+//                              (S4's 64 at D=64; at D=128 16 from N=2048 up, S4's 32 below)
 //                              (TileCfg<kArchTuring, D>::kBcF16: 64 for D=64, 32 for D=128).
 //   FA_S5_PREFETCH             unset or 1 -> register-staged prefetch on; 0 -> off (S4 path).
 //                              Read once per process (getenv), like FA_VERBOSE.
@@ -189,9 +189,10 @@
 // thing and keeps it only if it wins >= 3% on the median at the canonical config with p10/p90
 // shown next to it; a knob that loses stays instantiated (it is the "tried and rejected"
 // sub-entry with its profile) but is not the default. Defaults: D=64 is S4's tile with PREFETCH
-// on (no block height beat it in the A/B); D=128 is WARPS=4/BC=16/PREFETCH on, picked by the T4
-// A/B quoted at kDefaultWarps128 — those two ms figures are the only speed claims in this file
-// and they point at the committed CSV.
+// on (no block height beat it in the A/B); D=128 is WARPS=4/BC=16 from N=2048 up and S4's
+// WARPS=2/BC=32 below, both with PREFETCH on, picked by the T4 A/B and sweep quoted at
+// kTallTileMinN128 — those ms figures are the only speed claims in this file and they point at
+// the committed CSVs.
 //
 // LIMITS: gridDim.y = B*H <= 65,535; q/k/v/o 16-B aligned (rows are 128 B / 256 B, so every tile
 // base and every 16-B vector inherits it); N % 32 == 0 (contract); bf16 needs sm_80+ — the
@@ -225,15 +226,24 @@ constexpr int kPadF = TileCfg<kArchTuring, 64>::kSPad;    // +4 floats = 16 B pe
 constexpr int kVecElems = 8;                              // one 16-B vector = 8 halves/bf16
 constexpr unsigned kFullMask = 0xffffffffu;
 
-// Block heights when FA_FORCE_BR is 0. D=64 keeps S4's 4 warps (BR=64): the T4 A/B found no
-// taller/shorter block that beats it. D=128 moves from S4's 2 warps to 4 (BR=64, with BC=16
-// below) on the A/B of 2026-09-03 (bench/results/t4/stage5_tuning.csv, commit d835758, canonical
-// B2_H8_N2048_D128, 585 MHz): br64_bc16_pf1 8.4526 ms vs br32_bc32_pf1 9.8815 ms (S4's tile with
-// prefetch) = -14.5% on the median, past the 3% keep rule; S4's tile stays reachable through
-// FA_FORCE_BR=32 FA_FORCE_BC=32.
+// Default tiles when FA_FORCE_BR / FA_FORCE_BC are 0 (both override everything below).
+// D=64 keeps S4's 4 warps x BC=64: the T4 A/B (bench/results/t4/stage5_tuning.csv @ d835758,
+// canonical B2_H8_N2048_D64, 585 MHz) found no taller or shorter block that beats it.
 constexpr int kDefaultWarps64 = 4;
-constexpr int kDefaultWarps128 = 4;
-constexpr int kDefaultBc128 = 16;  // WARPS=4/BC=16: 59,904 B smem (opt-in), 168 regs, 0 spills
+constexpr int kDefaultBc64 = TileCfg<kArchTuring, 64>::kBcF16;  // 64, S4's
+// D=128 has two tiles, picked by N. The same A/B made WARPS=4 x BC=16 the winner at the canonical
+// config (8.4526 vs 9.8815 ms for S4's WARPS=2 x BC=32 with prefetch, -14.5%), but the 48-config
+// sweep at 15b83a5 (tall tile everywhere) against d835758 (S4's tile everywhere), both with
+// prefetch, bench/results/t4/stage5.csv, shows it is a size trade-off:
+//   N >= 2048: tall tile faster by 2.7-20.7% (N=4096: -20%; B8_H32_N2048 causal=0: -14.5%)
+//   N <= 1024: tall tile slower by 2.5-46% (B1_H8_N128: 0.062 vs 0.045 ms): half the blocks
+//              (16 < 40 SMs at B1_H8_N128), twice the K/V tiles = twice the barriers and S round
+//              trips per query row, and too few tiles for the prefetch to amortise.
+// The crossover sits between 1024 and 2048 (mixed at 1024: B8_H32 -6.8%, B1_H8 +4.8%), so the tall
+// tile is the default from N = 2048 up and S4's tile below it.
+constexpr int kTallTileMinN128 = 2048;
+constexpr int kTallWarps128 = 4, kTallBc128 = 16;    // 59,904 B smem (opt-in), 168 regs, 0 spills
+constexpr int kShortWarps128 = 2, kShortBc128 = 32;  // S4's tile: 43,008 B, 254 regs with prefetch
 static_assert(TileCfg<kArchTuring, 64>::kBrF16 / kFrag == kDefaultWarps64,
               "S5 D=64 default WARPS drifted from tile_config.h");
 
@@ -764,15 +774,21 @@ bool prefetch_enabled() {
   return on;
 }
 
-int default_bc(int D) {
-  // D=64 keeps S4's BC from tile_config.h (the static_assert keeps the two files from drifting);
-  // D=128 uses the tuned BC=16 (see kDefaultWarps128). S4's 32 stays reachable via FA_FORCE_BC.
-  static_assert(TileCfg<kArchTuring, 64>::kBcF16 == 64, "S5 D=64 default BC drifted");
-  return D == 64 ? TileCfg<kArchTuring, 64>::kBcF16 : kDefaultBc128;
+bool tall_tile_128(int N) {
+  return N >= kTallTileMinN128;
 }
 
-int default_warps(int D) {
-  return D == 64 ? kDefaultWarps64 : kDefaultWarps128;
+int default_bc(int D, int N) {
+  // D=64 keeps S4's BC from tile_config.h (the static_assert keeps the two files from drifting);
+  // D=128 picks by N (kTallTileMinN128). FA_FORCE_BC overrides both.
+  static_assert(TileCfg<kArchTuring, 64>::kBcF16 == kDefaultBc64, "S5 D=64 default BC drifted");
+  if (D == 64) return kDefaultBc64;
+  return tall_tile_128(N) ? kTallBc128 : kShortBc128;
+}
+
+int default_warps(int D, int N) {
+  if (D == 64) return kDefaultWarps64;
+  return tall_tile_128(N) ? kTallWarps128 : kShortWarps128;
 }
 
 bool aligned16(const void* p) {
@@ -992,8 +1008,9 @@ cudaError_t forward(Dtype dtype, const void* q, const void* k, const void* v, vo
     if (verbose()) std::fprintf(stderr, "fa::stage5: q/k/v/o must be 16-byte aligned\n");
     return cudaErrorInvalidValue;
   }
-  // FA_FORCE_BR -> WARPS = BR / 16 (BR must be a positive multiple of 16); 0 -> S4's height.
-  int warps = default_warps(p.D);
+  // FA_FORCE_BR -> WARPS = BR / 16 (BR must be a positive multiple of 16); 0 -> the default
+  // height for (D, N) (S4's at D=64; at D=128 4 warps from N=2048 up, S4's 2 below).
+  int warps = default_warps(p.D, p.N);
   if (dbg.block_m != 0) {
     if (dbg.block_m % kFrag != 0) {
       if (verbose()) {
@@ -1006,7 +1023,7 @@ cudaError_t forward(Dtype dtype, const void* q, const void* k, const void* v, vo
     }
     warps = dbg.block_m / kFrag;
   }
-  const int bc = dbg.block_n != 0 ? dbg.block_n : default_bc(p.D);
+  const int bc = dbg.block_n != 0 ? dbg.block_n : default_bc(p.D, p.N);
   const bool prefetch = prefetch_enabled();
   switch (dtype) {
     case Dtype::F16:
