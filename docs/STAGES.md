@@ -127,9 +127,214 @@ in ten lines with the guards for `m == -inf` and `l == 0` visible.
 
 ---
 
-## S1 — naive three kernels, fp32   (TBD)
-## S2 — shared-memory tiled GEMMs + coalesced loads   (TBD)
-## S3 — fused kernel, online softmax, FA2 loop order   (TBD)
+## S1 — naive three kernels, fp32   (branch `main`, commit 6e5bb87, date 2026-09-03, GPU Tesla T4)
+
+**Hypothesis.** A first CUDA port of attention is three global-memory kernels: `fa_s1_qk` (one thread
+per score, K rows read at stride D), `fa_s1_softmax` (one block per row, three passes) and `fa_s1_pv`
+(one thread per output element). Two metrics should indict it: `smsp__sass_average_data_bytes_per_
+sector_mem_global_op_ld.pct` on `fa_s1_qk` (only `sizeof(T)` of every 32-byte sector is used on the
+K loads: 4/32 fp32, 2/32 fp16) and `dram__bytes.sum` on `fa_s1_softmax`, which grows as B·H·N² because
+S and P are materialised in HBM (`workspace_bytes = 2·B·H·N·N·4`). This stage is the "before" of the
+whole ladder; nothing in it is tuned on purpose.
+
+**ncu before.** None — S1 is the baseline (`profiles/t4/stage1_fa_s1_qk.raw.csv`,
+`stage1_fa_s1_softmax.raw.csv`, `stage1_fa_s1_pv.raw.csv`).
+
+**Change.** `src/stage1_naive.cu`: per-head grids (`blockIdx.y = b·H + h`) keep in-kernel indices
+32-bit; causal is a `-inf` write for `j > i` (top-left); the softmax normalises P before PV (P =
+exp(s − m)/l) and writes `lse = m + log(l)` on the already-scaled scores; fp16 inputs are widened
+on load and narrowed on store, everything else fp32. GQA head mapping `kv_head = h / (H/Hkv)`. Index
+math was emulated on the CPU against `reference.py` (max |o − ref| ≤ 2e-15) before the GPU run.
+
+**ncu after.** TBD — filled from `profiles/t4/stage1_*.raw.csv` (`ncu_to_md.py` table in README):
+SOL SM% / Mem%, bytes-per-sector on `fa_s1_qk`, `dram__bytes.sum` on `fa_s1_softmax`, top-3 stall
+reasons, achieved occupancy, registers (ptxas sm_75: qk 34, softmax 42, pv 30; 0 spills).
+
+**Bench delta.** TBD — `bench/results/t4/stage1.csv` (median of ≥100 timed iterations after warm-up,
+256 MB L2 flush per iteration, clocks locked to 585 MHz); expected to lose to SDPA
+`EFFICIENT_ATTENTION` by a wide margin at every N, and to hit "OOM by design" for the fp32 N×N
+intermediates at B=8, H=32, N=4096 (17.2 GB of S alone on a 15 GB T4).
+
+**Decision.** Keep as the baseline whatever the numbers are; the value of S1 is the metric table,
+not the time.
+
+**Known limitations.** Materialises S and P; K read at stride D; PV sums over all N keys even under
+causal (the masked P entries are exactly 0, so `flops=full` accounting stays honest); bf16 not
+offered (contract: Naive is fp32/fp16).
+
+**Go / no-go for S2.** Go once the fp64 ratio-rule tests pass for fp32 and fp16 at D = 64 and 128,
+causal and non-causal, and the three profiles are committed.
+
+**5-line summary.**
+1. Three kernels, one thread per element, everything through global memory — the way a first port
+   looks, so every later stage is a one-variable change against it.
+2. The K loads are strided by D on purpose: adjacent threads own adjacent keys, so a warp touches 32
+   sectors and uses 4 bytes of each; that is what "uncoalesced" means and it shows up as
+   bytes-per-sector, not as an error.
+3. The N×N score and probability matrices round-trip HBM, so `dram__bytes.sum` grows quadratically in
+   the sequence length while the tensors themselves are linear in it — the number FlashAttention's
+   IO argument is about.
+4. Correctness is a differential test against an fp64 oracle with the FlashAttention ratio rule,
+   plus a CPU emulation of the index math, so the T4 run only had to catch layout and sync bugs.
+5. It is a baseline, not a product: its job is to make the S2 and S3 deltas measurable.
+
+**Two questions.**
+
+*Q1: Why is the thread-per-(i, j) mapping uncoalesced when each thread reads a whole K row?*
+Coalescing is a warp-level property of one load instruction, not of one thread's loop. At iteration
+d every lane loads `K[j_lane][d]`; the 32 lanes have consecutive j, so their addresses are D·sizeof(T)
+apart — 32 different 32-byte sectors for 128 requested bytes. The next iteration touches the same 32
+sectors one element further along, which is why L1 hit rate is high but the sector traffic is 8×
+(fp32) / 16× (fp16) what a walk along d would cost. S2 fixes it by making consecutive lanes walk d.
+
+*Q2: Where does S1's time actually go, and what would a roofline say?*
+Different kernels, different regimes. `fa_s1_qk` is latency/L1-bound on the strided K pattern;
+`fa_s1_softmax` is pure bandwidth: 2–5 N×4 bytes per row at L2 and DRAM level, no math worth
+counting, far left on the roofline. `fa_s1_pv` is the interesting one: at the L1 level it is one
+FFMA per 8 bytes (LSU-bound, `long_scoreboard` stalls), but at the DRAM level P is read once (one
+sector broadcast per warp) and V is served from L2, so its DRAM intensity is ~D/2 FLOP/B — right of
+the T4 ridge (~25 FLOP/B) — with low DRAM throughput. The lesson is that the roofline level has to be
+named; I state both in the kernel headers and plot the DRAM point.
+
+---
+
+## S2 — shared-memory tiled GEMMs + coalesced loads   (branch `main`, commit be6b6c8, date 2026-09-03, GPU Tesla T4)
+
+**Hypothesis.** Keep S and P materialised (so the S1→S2 delta isolates memory-access pattern from
+fusion) but compute both GEMMs from shared-memory tiles with coalesced vector loads and 2-D register
+blocking. `smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct` on the QKᵀ kernel should
+rise toward 100 %, `dram__bytes.sum` should drop by the tile-reuse factor, and L1/L2 hit rates should
+rise. Shared-memory bank conflicts are expected and RECORDED here
+(`l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum`) as S5a's "before".
+
+**ncu before.** S1's three profiles.
+
+**Change.** `src/stage2_tiled.cu`: `fa_s2_qk_tiled` / `fa_s2_pv_tiled` — 64×64 output tile per
+block, 256 threads as a 16×16 grid, 4×4 register tile per thread, reduction chunks of 16 through
+`Qs[64][16]`, `Ks[64][16]` (8 KB static smem per block), `float4` (fp32) / 8-byte (fp16) loads with
+consecutive threads walking the contiguous D axis, two `__syncthreads` per k-step (RAW after the
+cooperative load, WAR before the next), scale and causal mask applied at store time, block-uniform
+early exit for fully masked tiles. `fa_s2_softmax`: `__shfl_down_sync` warp trees plus one smem fold
+(2 barriers per row versus S1's 4). `#pragma unroll 2` keeps qk/pv at 61 registers so 4 blocks of 256
+threads fit per SM (32 warps); full unrolling under `__launch_bounds__(256, 4)` spilled and was
+rejected (recorded in the file header).
+
+**ncu after.** TBD — `profiles/t4/stage2_*.raw.csv`: bytes-per-sector, `dram__bytes.sum`,
+`l1tex__t_sector_hit_rate.pct`, `lts__t_sector_hit_rate.pct`, bank conflicts (the S5a "before"),
+occupancy, stalls.
+
+**Bench delta.** TBD — `perf:` trailer from `bench/results/t4/stage2.csv` versus stage1 at
+`B2_H8_N2048_D64` fp32.
+
+**Decision.** TBD after measurement (expected: kept).
+
+**Known limitations.** Still materialises S and P (the N² traffic remains — that is S3's job); one
+tile configuration, no sweep; `Ks` column reads on a row-major tile are bank-conflicted by design.
+
+**Go / no-go for S3.** Go once the coalescing metric moved as predicted and the tests pass.
+
+**5-line summary.**
+1. Same math and the same N×N intermediates as S1; only the way bytes reach the SM changed.
+2. Each block loads a 64×16 slice of Q and K into shared memory with 16-byte vector loads where
+   consecutive lanes are consecutive addresses, so a warp's request is four full 128-byte lines.
+3. Every value that reaches a register feeds four FMAs (4×4 register tile), so the inner loop is
+   8 shared loads per 32 FMAs instead of 2 loads per FMA.
+4. The unroll factor was chosen by the ptxas register report, not by taste: unroll 2 keeps 61
+   registers and four resident blocks; full unroll spills under a launch bound.
+5. The bank conflicts on the K tile are left in deliberately — they are the measured "before" for the
+   S5a padding change.
+
+**Two questions.**
+
+*Q1: What is a shared-memory bank conflict and where exactly is it in this kernel?*
+Shared memory is 32 banks of 4 bytes; a warp's load is serialised into as many wavefronts as there
+are distinct addresses in the same bank. In `fa_s2_qk_tiled` the inner loop reads `Ks[col][k]` with
+`col` varying across lanes and the row stride 16 floats: 16 columns × 16 floats = addresses 64 bytes
+apart, i.e. every second bank, so 16 lanes hit 8 banks two ways — a multi-way conflict on every
+k-step. Padding the row to 20 floats (S5a) makes consecutive columns land in consecutive banks. The
+counter is `l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum`.
+
+*Q2: If S2 is faster, why not stop here and tune it?*
+Because the ceiling is wrong. Tiling reduces how many times each Q/K element crosses the L1
+boundary, but the N×N score matrix still crosses HBM twice (write, read) and P again, so the traffic
+is Θ(N²) no matter how well the GEMMs run. The FlashAttention argument is that with on-chip
+memory M you can make the HBM traffic Θ(N²d²/M) by never writing S; on a T4 with 64 KB per block
+that is the only way the N=4096 configurations stop being memory-bound. S3 changes the algorithm's
+IO complexity; S2 only changed constants.
+
+---
+
+## S3 — fused kernel, online softmax, FA2 loop order   (branch `main`, commit adf94d0, date 2026-09-03, GPU Tesla T4)
+
+**Hypothesis.** One kernel per Q tile that streams K/V tiles through shared memory and keeps the
+softmax statistics and the un-normalised output in registers never materialises S or P, so
+`dram__bytes.sum` should collapse from O(B·H·N²) to O(B·H·N·D) (FA1 Theorem 2) and DRAM throughput
+should stop being the limiter. The honest expectation is that fp32 thread-per-row S3 is NOT fast:
+low `sm__throughput`, `mio_throttle` and `barrier` stalls and 1–2 blocks per SM are the recorded
+motivation for S4 (tensor cores) and S5 (occupancy, shuffles).
+
+**ncu before.** S2's profiles.
+
+**Change.** `src/stage3_fused.cu`: grid `(ceil(N/64), B·H)`, 64 threads per block, thread-per-row;
+running max `m` (raw score units), running sum `l` and `acc[D]` in registers; `alpha =
+exp2((m − m_new)·scale·log2e)` (a multiply, never an inverse; 0 when `m = −inf`) rescales BOTH `l`
+and `acc`; `p = exp2(s·c − m_new·c)` with the scale folded once into `c`; one divide per row after
+the last tile; `lse = m·scale + ln(l)`. Q tile padded to D+1 floats so thread-per-row column reads
+are conflict-free; K/V tiles unpadded because every lane reads the same element (broadcast
+`float4`). Causal: fully masked K/V tiles are skipped by the loop bound, straddling tiles masked per
+element with global indices (`j > i`). BC ∈ {16, 32, 64} selectable through `FA_FORCE_BC` for the
+tile-invariance test; defaults 32 (D=64) and 16 (D=128); dynamic-smem opt-in above 48 KB.
+
+**ncu after.** TBD — `profiles/t4/stage3_fa_s3_fused.raw.csv`: `dram__bytes.sum` (the headline),
+`dram__throughput.avg.pct_of_peak_sustained_elapsed`, SOL SM%, top stalls, occupancy (expected
+6–12 %: the padded Q tile is 16.6–33 KB), registers (ptxas sm_75: 146–255 depending on D and BC,
+0 spills).
+
+**Bench delta.** TBD — `perf:` trailer versus stage2 at `B2_H8_N2048_D64` fp32; and the first row
+that is not OOM-by-design at B=8, H=32, N=4096.
+
+**Decision.** TBD after measurement; kept even if slower than SDPA(EFFICIENT) at N=4096, because
+the traffic collapse is the point of the stage and the speed comes from S4/S5.
+
+**Known limitations.** Thread-per-row means `acc[D]` in registers and 2 warps per block: occupancy is
+bound by the Q tile's shared memory; no tensor cores; `N % 32 == 0`; forward only.
+
+**Go / no-go for S4.** Go once `dram__bytes.sum` is confirmed O(N) in the profile and the
+tile-invariance and causal tests pass.
+
+**5-line summary.**
+1. The block owns a 64-row Q tile for its whole life and walks the keys in tiles; the score tile
+   lives in registers, so nothing of size N×N ever leaves the SM.
+2. The softmax is computed online: keep a running max and a running sum per row; when a new tile
+   raises the max, multiply the old sum and the old accumulator by exp(old − new) — a factor in (0, 1]
+   — and add the new tile's contributions.
+3. Normalisation is deferred to one divide per row at the end (FA2), which also means the `l = 0` guard
+   exists in exactly one place.
+4. The measured effect is in DRAM bytes, not time: fp32 thread-per-row is register-heavy and
+   low-occupancy, and the profile says so.
+5. Everything the kernel does is mirrored by a ten-line Python model with a tile-invariance test, so
+   the recurrence is defended on a whiteboard before it is defended in SASS.
+
+**Two questions.**
+
+*Q1: Derive the online-softmax rescale and explain why it is numerically safe.*
+For a row split into tiles, softmax(x) = exp(x − m)/Σexp(x − m) for any m; using the running max
+m_j of the tiles seen so far, the partial sum l_j = Σ_{k≤j} exp(x_k − m_j). When tile j+1 raises the
+max to m_{j+1} ≥ m_j, l_{j+1} = exp(m_j − m_{j+1})·l_j + Σ exp(x_{k∈j+1} − m_{j+1}); the same factor
+multiplies the un-normalised output accumulator because it is linear in the same exponentials. The
+factor exp(m_j − m_{j+1}) is ≤ 1, so it can underflow to 0 harmlessly but never overflow, and each
+exp argument is ≤ 0 so p ∈ [0, 1]. The remaining hazard is a row with no unmasked key (m = −inf):
+exp(−inf − (−inf)) is NaN, so the factor is defined as 0 and the final 1/l is defined as 0 for l = 0.
+
+*Q2: FlashAttention's theorem says HBM traffic is Θ(N²d²/M). What is M on a T4 and what does the
+ratio actually buy you at d = 64 and d = 128?*
+M is the on-chip memory a block can use for its tiles: 64 KB on Turing (48 KB without opt-in), i.e.
+16 K fp32 elements. The N² term's coefficient is d²/M, so the reduction over the materialised
+algorithm's Θ(N² + Nd) is about M/d² ≈ 4 at d = 64 and ≈ 1 at d = 128 in element units — which is
+why the profile is the right artefact: on a small-SRAM GPU the win is real but not the 10–20× an
+A100 gets, and fp16 tiles (S4) double the effective M.
+
+---
 ## S4 — fp16 WMMA, fp32 accumulate   (TBD)
 ## S5a — bank-conflict-free shared memory   (TBD)
 ## S5b — warp-shuffle softmax   (TBD)
