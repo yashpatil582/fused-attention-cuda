@@ -84,3 +84,16 @@ Running total: TBD (cap ~$25, <= 12 GPU-hours in-window).
   the second pair is the one that counts (result recorded in STAGES.md PROBE 6 once finished).
 - Colab quirks worth remembering: the runtime idles out in ~30 min between cells ("Runtime disconnected" dialog →
   Reconnect); coordinate clicks from Claude-in-Chrome are unreliable, element refs and one-line cells are not.
+
+### 2026-09-03 05:20–05:50 UTC — S1 validated on the T4; S2 run interrupted; sanitizer resized
+
+- S1 at be6b6c8: 47 GPU tests passed + 2 xpassed (GQA already works through `kv_head = h/(H/Hkv)`),
+  memcheck/racecheck clean, clocks locked to 585 MHz, 8 bench rows, 6 Nsight captures (32 metrics).
+  Naive fp32 at C64: 410.6 ms vs SDPA(EFFICIENT) 11.6 ms; C128: 817.1 ms vs 20.9 ms.
+- Lesson: the compute-sanitizer gate ran `fa_bench --smoke --stage N` at C64 (B2 H8 N2048). memcheck
+  on the tiled stage took ~1 s per iteration, racecheck (shared-memory instrumentation) far longer —
+  the stage-2 run sat in racecheck for ~15 min before I interrupted it. Fixed in f686962: the sanitizer
+  now runs B1_H2_N288_D64 and _D128 (multi-tile, partial last tile for BC=64, both head dims).
+- Also: gpu_run.sh now tees its whole output to build/gpu_run_stage<N>.log (a deleted notebook cell
+  cost the S1 summary once; Colab's ctrl+m z restored it).
+- Still no GH_PAT in Colab Secrets: results are read from the notebook; the runner push waits.

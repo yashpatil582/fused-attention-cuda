@@ -335,7 +335,77 @@ why the profile is the right artefact: on a small-SRAM GPU the win is real but n
 A100 gets, and fp16 tiles (S4) double the effective M.
 
 ---
-## S4 — fp16 WMMA, fp32 accumulate   (TBD)
+## S4 — fp16 WMMA, fp32 accumulate   (branch `main`, commit 1bb0e1a, date 2026-09-03, GPU Tesla T4)
+
+**Hypothesis.** S3 is bound by its FFMA stream: every FMA has a shared-memory operand and the
+thread-per-row mapping caps occupancy. Moving both inner products onto the tensor cores
+(`nvcuda::wmma` 16×16×16, fp16 operands, fp32 accumulate) should make
+`sm__pipe_tensor_op_hmma_cycles_active.avg.pct_of_peak_sustained_active` go from 0 to clearly
+non-zero, `sm__inst_executed_pipe_tensor.sum` > 0, and the FFMA count fall; the new top stalls
+should be `barrier` and `mio_throttle` from the shared-memory round trips that the opaque fragment
+layout forces — S5's targets.
+
+**ncu before.** S3's profile (`profiles/t4/stage3_fa_s3_fused*.raw.csv`).
+
+**Change.** `src/stage4_wmma.cu` (`fa_s4_wmma<T, D, BC>`): block = BR rows = 16·warps (BR 64 / 4
+warps at D=64, BR 32 / 2 warps at D=128 because the fp32 O staging strip is D wide); warp w owns
+rows 16w..16w+15 for everything (FA2's partition), so the softmax bookkeeping never crosses warps.
+Q fragments (`matrix_a row_major`, stride D+8 halves) are loaded once per block and stay in
+registers; K is read as `matrix_b col_major` so Kᵀ costs nothing; S is `store_matrix_sync`'d to a
+padded fp32 strip because the fragment→(row, col) mapping is opaque; the two lanes of a row do the
+online-softmax update on halves of the strip and combine with `__shfl_xor_sync(…, 1)`; P is written
+as packed `__half2` into the dead Q tile and re-loaded as `matrix_a`; O accumulators live in
+registers and are rescaled through a second round trip that a warp vote skips whenever every row's
+alpha is exactly 1 (the running max stabilised). Shared memory 31–60 KB per block (padding +8 halves /
++4 floats keeps every fragment pointer 256-bit aligned and `ldm` a multiple of 16 B); 0 spills on
+sm_75 (92–151 registers at D=64, 168–253 at D=128). bf16 compiles only for sm_80+ (trap stubs below).
+
+**ncu after.** TBD — `profiles/t4/stage4_fa_s4_wmma*.raw.csv`: tensor-pipe utilisation, FFMA
+count, stall breakdown, occupancy (1 block/SM = 4 warps at D=64/BC=64 is the honest T4 number).
+
+**Bench delta.** TBD — `perf:` trailer versus stage3 (fp32) and the first fp16 rows versus SDPA
+`EFFICIENT_ATTENTION` in fp16.
+
+**Decision.** TBD after measurement.
+
+**Known limitations.** Two shared-memory round trips per K/V tile (S store/reload, O rescale);
+one block per SM on T4 at the default tiles; no cp.async (Ampere+), no swizzle (S5a), no
+`ldmatrix`/`mma.sync` (the register-resident path FA2 uses is week-after work).
+
+**Go / no-go for S5.** Go once the tensor-pipe metric is non-zero and the fp16 ratio-rule tests pass.
+
+**5-line summary.**
+1. Both matmuls run on the tensor cores as 16×16×16 fp16 fragment products with fp32 accumulation;
+   Q fragments are hoisted out of the K/V loop and Kᵀ is free by declaring K column-major.
+2. WMMA's fragment layout is opaque, so the softmax cannot index the accumulator; the score tile is
+   stored to shared memory, reduced there, and the probabilities go back in as an fp16 operand.
+3. Each warp owns 16 rows end to end, which keeps the running max and sum warp-local and removes
+   every cross-warp barrier from the softmax.
+4. The output accumulator must be rescaled by alpha per row, which is another round trip — skipped
+   by a warp vote once the max stops changing.
+5. The tensor pipe metric is the proof this stage is real; the barrier and MIO stalls it introduces
+   are what S5 is for.
+
+**Two questions.**
+
+*Q1: Why not read the row max straight out of the accumulator fragment?*
+Because NVIDIA documents the fragment element mapping as opaque ("your program should not make
+assumptions about it"); it differs across architectures and even compiler versions. The portable
+answer is `store_matrix_sync` to shared memory and index there, which is what this stage does and
+what makes the round trips show up in the profile. FlashAttention-2 avoids the round trips by using
+`mma.sync` PTX directly, whose accumulator layout IS documented (lane `groupID = lane >> 2` owns rows
+`groupID` and `groupID + 8`), so the softmax can be done on register fragments — that is the S5/week-after
+path and the reason production kernels do not use WMMA.
+
+*Q2: Why +8 halves of padding on every shared-memory row?*
+Two reasons, one required and one measured. Required: `load_matrix_sync` needs `ldm` to be a multiple
+of 8 halves (16 B) and fragment pointers to be 256-bit aligned; D+8 keeps every 16-row/16-column
+fragment origin aligned because 16·(D+8)·2 B is a multiple of 32 B. Measured: a 64-element fp16 row
+is exactly 128 B, so rows start in the same bank and column-wise fragment loads serialise; shifting
+each row by 16 B rotates the bank of successive rows — the same idea as the `SKEW_HALF` in
+cuda-samples' tensor-core GEMM. S5a records the conflict counter with and without it.
+
+---
 ## S5a — bank-conflict-free shared memory   (TBD)
 ## S5b — warp-shuffle softmax   (TBD)
 ## S6 — torch op dispatch, GPT block, causal block skipping   (TBD)
