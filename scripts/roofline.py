@@ -207,11 +207,15 @@ def main(argv=None) -> int:
         for p in pts:
             perf = p["flops"] / p["time_s"]
             ai = p["flops"] / p["dram_bytes"] if p["dram_bytes"] else float("nan")
+            # fadd+fmul+2*ffma only counts the CUDA-core FLOPs: for the tensor-core stages (S4+)
+            # the matmul FLOPs run on the HMMA pipe, which this counter does not see, so the ratio
+            # is ~0.01-0.02 there by construction and only the fp32 stages are cross-checked.
             ratio = p["counter_flops"] / p["flops"] if p["counter_flops"] else float("nan")
+            tensor_note = " (tensor stage: FFMA counter excludes HMMA)" if p["stage"] >= 4 else ""
             print(
                 f"roofline[{gpu}] S{p['stage']} {p['cfg']}: time={p['time_s'] * 1e3:.3f} ms "
                 f"achieved={perf / 1e12:.3f} TFLOP/s AI_dram={ai:.2f} "
-                f"counter_flops/analytic={ratio:.2f}"
+                f"counter_flops/analytic={ratio:.2f}{tensor_note}"
                 + (f" PARTIAL missing {sorted(p['partial'])}" if p["partial"] else "")
             )
         out = Path(a.out_dir) / f"roofline_{gpu}.png"

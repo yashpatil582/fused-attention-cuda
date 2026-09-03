@@ -60,8 +60,15 @@ theorem counts as HBM traffic, the DRAM number is what the theorem-plus-cache ac
 expect to see: `dram__bytes.sum` for S1/S2 grows like `N^2` (S and P written and read); for S3, Q is
 read once, O and LSE written once, and `dram__bytes.sum` approaches the compulsory
 `B H (4 N D sizeof + 4 N)` while `lts__t_bytes.sum` stays ~`T_c` times larger. The S3 entry reports
-both. The measured before/after lives in `profiles/t4/stage2_fa_s2_qk_tiled.raw.csv` and
-`profiles/t4/stage3_fa_s3_fused.raw.csv`: TBD.
+both. Measured on the T4 at 3add37c (`profiles/t4/stage{1,2,3}_*.raw.csv`, C64 = B2 H8 N2048 D64 fp32,
+C128 = D128): S1's three kernels move 365.7 + 620.0 + 560.8 = **1,546 MB** through DRAM at C64
+(1,609 MB at C128); S2's tiled kernels still materialise S and P and move **1,499 MB** — tiling
+fixed coalescing and reuse, not the byte count; S3 moves **38.7 MB** at C64 and **100.3 MB** at
+C128. That is 40x / 16x fewer DRAM bytes. The compulsory `B H (4 N D sizeof + 4 N)` is 33.7 MB /
+67.2 MB, so S3 sits at 1.15x / 1.49x of compulsory, and `lts__t_bytes.sum` = 650 MB / 1,283 MB
+(17x / 13x the DRAM bytes) carries the K/V re-reads the theorem counts as HBM traffic: at D=128 a
+head's K/V no longer stays fully L2-resident across the 32 Q blocks, which is the 1.49x. The fp16
+stages read the same 1.13-1.14x of compulsory (19.1 MB at C64, 38.4 MB at C128).
 
 ## 3. FA1 -> FA2: loop order and split-Q warp partitioning
 
@@ -108,8 +115,16 @@ multiples of 8 elements), so S5a pads fp32 tiles by +4 floats and fp16 tiles by 
 for half; cuda-samples' `cudaTensorCoreGemm` does the same with `SKEW_HALF`. The XOR swizzle
 (`Swizzle<3,3,3>`, CuTe `swizzle.hpp`) is the zero-smem alternative, pure index arithmetic, portable
 to sm_75. I do not argue conflict-freedom from memory for the vector case: the arbiter is
-`l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum`, recorded in S2 as the "before" and again
-after S5a. Values: TBD.
+`l1tex__data_bank_conflicts_pipe_lsu_mem_shared_op_ld.sum`. Values at C64 / C128 (T4, 3add37c
+and d835758): S2 `fa_s2_qk_tiled` with the deliberately unpadded `Ks[r][BK]` = **520 M / 1,040 M**
+load conflicts (the textbook column-read case, kept as the "before"), `fa_s2_pv_tiled` 16.8 M /
+33.6 M; S3 (`Qs[BR][D+1]`, thread-per-row) 0 / 0 load conflicts and 55 K / 2.7 M store conflicts;
+S4 with +8-half padding 4.9 M / 8.1 M load and 4.9 M / 11.2 M store conflicts out of 47.7 M /
+84.1 M warp instructions; S5 unchanged (4.9 M / 8.1 M and 5.4 M / 12.0 M). The padding took the
+S2-style 32-way conflict off the table; what remains is the fragment store/reload traffic, and the
+S4 stall breakdown ranked `long_scoreboard` (DRAM latency) and `mio_throttle` above it, so the S5
+budget went to the K/V prefetch and the block height. The XOR swizzle stays the next step and would
+be judged by this counter.
 
 ## 5. WMMA opacity versus the documented `mma.sync` lane map
 
@@ -142,12 +157,17 @@ higher"). `mma.sync` m16n8k16 f16 is also sm_80+ (CUTLASS `functionality.md`). C
 rather than hide: on T4 my K/V prefetch is a register-staged `ld.global -> st.shared` double buffer,
 which costs the registers `cp.async` would have saved; bf16 and `cp.async` live under
 `#if __CUDA_ARCH__ >= 800`, compiled by CI, run only on Track B. Occupancy from the tile budget is
-a compile-time constant in `include/fa/tile_config.h`, not a typed number: the S3 fp32 tile at
-`d = 64` is 30 KB (`TileCfg<750, 64>::kSmemF32 == 30720`), so `64 KB / 30 KB = 2` blocks per SM
-(`kBlocksPerSmBySmemF32 == 2`), 4 warps each, `kWarpsPerSmBySmemF32 == 8` warps = a quarter of
-the 32-warp ceiling; at `d = 128` (35.5 KB) and for both S4 fp16 tiles (44 KB, 43 KB) it is one
-block, 4 warps, 12.5%. Registers (128 threads x 128 registers = 16K of 64K) do not bind before
-smem does. The achieved value is `sm__warps_active.avg.pct_of_peak_sustained_active`: TBD.
+a compile-time constant in `include/fa/tile_config.h`, not a typed number — and the profile
+corrected it. The header's S3 estimate (`TileCfg<750, 64>::kSmemF32 == 30720`, 2 blocks x 4 warps
+= 8 warps/SM at `d = 64`) assumed 128-thread blocks and a 30 KB tile; the kernel as written is
+one thread per row (BR = 64 -> 64 threads = 2 warps) with a 33,024 B tile (padded `Qs[BR][D+1]`
+plus the S strip), so `64 KB / 33 KB = 1` block and the achieved
+`sm__warps_active.avg.pct_of_peak_sustained_active` is **6.26 %** = 2 warps at `d = 64` and 6.25 %
+at `d = 128` (49,408 B, > 48 KB, launched through the opt-in). S4: 12.52 % (one 4-warp block,
+45,056 B) at `d = 64`, 6.25 % (one 2-warp block, 43,008 B) at `d = 128`. S5 keeps 12.49 % at
+`d = 64` and raises `d = 128` to a 4-warp block (BR = 64, BC = 16, 59,904 B, opt-in) — the
+achieved value of that tile is in `docs/STAGES.md` S5. Registers never bind before shared memory
+on any of these (`launch__occupancy_limit_registers` 3-6 blocks vs `_shared_mem` 1).
 
 ## 7. Why FA3 is Hopper-only
 
@@ -201,10 +221,17 @@ With square tiles and `n = ceil(N / block)` tile rows, the causal kernel compute
 `j <= i`: `n (n + 1) / 2` of `n^2`, a fraction of `(n + 1) / (2n)`, which is 1/2 only as `n -> inf`
 (at element granularity it is `(N + 1) / (2N)`). Three regimes in the K/V loop: fully masked tiles
 skipped *before any load* (`bn * Bc > bm * Br + Br - 1`), the diagonal tile masked element-wise, the
-interior unmasked with no mask instructions at all. FA2 reports "around 1.7-1.8x" from skipping; my
-number is measured in S6 and, until block skipping exists, my causal rows use the full FLOP count and
-say `flops=full`, because halving the numerator on a kernel that still computes every tile is a
-fabricated 2x.
+interior unmasked with no mask instructions at all. FA2 reports "around 1.7-1.8x" from skipping.
+Skipping by loop bound (`kv_end = causal ? min(i0 + BR, N) : N`) has been in every fused stage
+since S3, and the T4 sweep measures it: causal / non-causal time at fixed shape is **1.73-1.87x**
+over N in {1024, 2048, 4096}, D in {64, 128}, B x H in {8, 256} (`bench/results/t4/stage5.csv`
+@ d835758, fp16; e.g. B1_H8_N2048_D64 1.108 vs 1.956 ms = 1.77x, B8_H32_N4096_D64 112.45 vs
+209.33 ms = 1.86x; S4 gives the same 1.73-1.87x). It is below 2x for exactly the `(n + 1) / (2n)`
+reason plus the masked diagonal tile. Accounting follows CONTRACT §5: a causal row of a
+tile-skipping kernel is credited half of `4 B H N^2 D` (`flops=causal_half`, the FlashAttention
+benchmark convention) so its TFLOP/s is comparable with the dense row; rows benchmarked before that
+convention landed (S1-S4 sweeps at 3add37c) still say `flops=full` in their notes, and a
+materialising kernel (S1, S2, MATH oracle) always keeps the full count.
 
 ## 11. Production context: TensorRT-LLM and cuDNN
 

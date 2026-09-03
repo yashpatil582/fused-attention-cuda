@@ -60,7 +60,9 @@ extension with `TORCH_LIBRARY` + `register_fake`, `reference.py` + CPU tests, `s
 
 **Probes.** PROBE L (local arm64 nvcc via colima), PROBE 1 (Colab env), PROBE 2 (Colab ncu),
 PROBE 3 (AWS quota), PROBE 4 (VM ncu), PROBE 5 (permission prompts), PROBE 6 (CI install time),
-PROBE 7 (macOS ncu GUI): all results TBD, recorded in `docs/STAGES.md` S0 and `docs/ENV.md`.
+PROBE 7 (macOS ncu GUI): results recorded in `docs/STAGES.md` S0 and `docs/ENV.md` as they came
+in (PROBE L, 1, 2, 5, 6 done; PROBE 3 failed on invalid AWS credentials; PROBE 4 and 7 not run —
+no VM, no host GUI needed for the CLI workflow).
 
 **Open risks carried into S1.** Colab may hand out a blocked instance or no T4; the S4 WMMA overrun
 (opaque fragments, `ldm` alignment, 64 KB cap); Colab nvcc/torch versions differing from the
@@ -72,9 +74,9 @@ July-2026 evidence (12.8); Claude Max usage windows during long autonomous runs.
 
 | Date | Provider | Instance | Hours | USD | Purpose |
 |---|---|---|---|---|---|
-| TBD | TBD | TBD | TBD | TBD | TBD |
+| — | none | none | 0 | 0.00 | Track B never started: the AWS quota probe failed (invalid credentials) and no Lambda/Vast account was opened; every number in the repo is from the free Colab T4 |
 
-Running total: TBD (cap ~$25, <= 12 GPU-hours in-window).
+Running total: **$0.00** (cap ~$25). Colab T4 time used: ~5 GPU-hours across 2026-09-03.
 
 ### 2026-09-03 00:35 UTC — S0 round trip on Colab T4
 
@@ -110,3 +112,37 @@ Running total: TBD (cap ~$25, <= 12 GPU-hours in-window).
 - These rows were stamped `f686962-dirty` because a docs generator had run inside the Colab checkout before
   the stage runs; `test_bench_sanity` rejects dirty commits, so the batch is being re-run from a clean tree at
   3add37c (canonical configs + the 48-config sweep for every stage). Only the clean rows will be committed.
+
+### 2026-09-03 06:00–08:00 UTC — clean S1–S4 re-run at 3add37c (canonical + 48-config sweep + Nsight)
+
+- Every stage re-benchmarked from a clean checkout so no row is `-dirty`: 8 + 8 + 8 + 8 canonical rows, the
+  full CONTRACT §5 sweep per stage (causal 0 and 1), 16 Nsight captures at `--clock-control base`.
+  Two findings only the sweep shows: (a) S3 fp32 at D=128 is barely better than S2 (94.3 vs 115.8 ms) because
+  the thread-per-row kernel runs 2 warps per SM (`sm__warps_active` 6.25 %); (b) the causal rows are 1.73–1.87×
+  faster than dense at the same shape in every fused stage — the loop-bound tile skip has been there since S3.
+- `gpu_run.sh` died with exit 141 after the sweep (a `grep | head` under `pipefail` — SIGPIPE) with all rows
+  already written; fixed in ba3292a (`|| true` on every `| head`). The sweep rows were kept.
+
+### 2026-09-03 08:08–08:30 UTC — S5 at d835758: prefetch + block height, A/B, GPT block
+
+- S5 = the S4 kernel with two template knobs (WARPS = block height, PREFETCH = register-staged K/V double
+  buffer), 54 instantiations, 0 spills on sm_75. GPU tests green, sanitizer clean, 2 Nsight captures.
+- Prefetch at S4's tiles: `long_scoreboard` stall 11.4 % → 0.85 % (C64) and 17.4 % → 0.41 % (C128), medians
+  3.944 → 3.629 ms and 11.170 → 9.873 ms. `tune_s5.sh` A/B (22 variants): at D=64 nothing beats S4's tile
+  with prefetch (WARPS=8 needs BC ≤ 32 and loses 5.5 %); at D=128 WARPS=4 × BC=16 wins 14.5 % over S4's tile
+  with prefetch (8.453 vs 9.882 ms) → adopted as the default in 15b83a5.
+- GPT block (nanoGPT shape, B8 H12 T1024 D64 fp16 causal): 703 K tok/s with our op vs 856 K with SDPA; our
+  attention window (op + the three `.contiguous()` copies) is 4.12 ms vs 2.04 ms.
+
+### 2026-09-03 08:30–09:15 UTC — evidence transport without a PAT; S5 default changed
+
+- No `GH_PAT` in Colab Secrets, so `gpu_run.sh --push` could not run. Results (17 CSV/TXT files, 41 profile
+  files, 1.7 MB) came out as an xz tarball → base64 in the notebook output (49,812 B, 23 lines of 3,000
+  chars, read in two chunks by Claude in Chrome), decoded on the Mac with a sha256 check
+  (`.research/transport/`), then committed as 05ee981. `.ncu-rep` binaries stay on the VM (not transportable
+  this way; the raw CSVs carry every metric the docs quote).
+- Data-hygiene bug found while committing: `stage_csvs()` globbed `stage5_tuning.csv`, so `summary.csv` and
+  the README's S5 column showed the last A/B variant instead of the default. Fixed in the same commit.
+- 15b83a5: S5 D=128 default → WARPS=4 × BC=16 (168 registers, 59,904 B smem, 0 spills); local nvcc build
+  clean; S5 re-run started on the T4 at 09:12 UTC to bench and profile the new default.
+
