@@ -75,3 +75,12 @@ July-2026 evidence (12.8); Claude Max usage windows during long autonomous runs.
 | TBD | TBD | TBD | TBD | TBD | TBD |
 
 Running total: TBD (cap ~$25, <= 12 GPU-hours in-window).
+
+### 2026-09-03 00:35 UTC — S0 round trip on Colab T4
+
+- `gpu_run.sh --stage 0 --gpu t4 --mode quick` at 023cfb8: build 9 s, smoke ctest green, sanitizer clean, ncu PASS,
+  torch extension built (torch 2.11.0+cu128), GPU pytest 8 passed / 8 skipped. Whole cell ~70 s.
+- CI on the first push: the `feat(s0)` runs were cancelled by concurrency when the `docs(env)` push landed 50 s later;
+  the second pair is the one that counts (result recorded in STAGES.md PROBE 6 once finished).
+- Colab quirks worth remembering: the runtime idles out in ~30 min between cells ("Runtime disconnected" dialog →
+  Reconnect); coordinate clicks from Claude-in-Chrome are unreliable, element refs and one-line cells are not.
