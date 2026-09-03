@@ -30,7 +30,7 @@ commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_me
   for the README tables; additionally `smoke` (stage 0: the S0 `fa_bench --smoke` round-trip row, never rendered) and
   `gpt_sdpa_efficient` / `gpt_sdpa_flash` / `gpt_fused` in `gpt_block.csv` only (`ms_median` = block time, tokens/s in `notes`).
 - `stage` ∈ {1..5} for our kernels, 0 for baselines. `dtype` ∈ {fp32, fp16, bf16}. `causal` ∈ {0,1}.
-- `tflops` = FLOPs / time with FLOPs = 4·B·H·N²·D (causal rows use the full count until block skipping exists; `notes` says `flops=full`).
+- `tflops` = FLOPs / time with FLOPs = 4·B·H·N²·D; a causal row of a tile-skipping kernel (S3+, SDPA/flash baselines) uses half of that (`notes` says `flops=causal_half`, the FlashAttention benchmark convention), a causal row of a materialising kernel (S1, S2, torch_unfused, MATH oracle) keeps the full count (`flops=full`).
 - `gbps` = modelled minimum bytes / time (fused: Q+K+V+O+LSE; materializing impls add one write and one read each of S and P);
   measured traffic is the profile's `dram__bytes.sum`.
 - `notes` free text: `oom_by_design`, `flops=full`, `clock=unlocked`, `clock_lock=<mhz>`, `noisy`, `iters=<n>`, `run=<utc>`,

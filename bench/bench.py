@@ -573,7 +573,7 @@ def main(argv=None) -> int:
                 return Path(args.out)
             return gpu_dir / f"stage{stage if stage else (stages[0] if stages else 0)}.csv"
 
-        common = ["flops=full"] if causal else []
+        common = []  # the FLOP convention is per impl (materialising -> full, skipping -> half)
         if args.tol_scale != 2.0:
             common.append(f"tol_scale={args.tol_scale:g}")
         common.append(f"run={run_id}")
@@ -651,7 +651,13 @@ def main(argv=None) -> int:
                 )
                 continue
             ms = t["median"]
-            flops = attention_flops(B, H, N, D)
+            # Protocol rule 5: a causal row of a kernel that skips fully masked tiles is
+            # accounted at half the FLOPs (FlashAttention convention); materialising impls
+            # (S1/S2, torch_unfused, the MATH oracle) still do the full N^2 work.
+            causal_half = bool(causal) and not icfg.get("materializing", False)
+            flops = attention_flops(B, H, N, D, causal_half=causal_half)
+            if causal:
+                notes = notes + ["flops=causal_half" if causal_half else "flops=full"]
             nbytes = bytes_moved(icfg, B, H, N, D, dtype)
             clock_col, cnotes, locked_ok = clock_notes(t["clocks"], args.clock_locked)
             if args.clock_locked and not locked_ok:

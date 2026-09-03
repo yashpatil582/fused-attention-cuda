@@ -242,10 +242,13 @@ def fmt_num(x: float | None, nd: int = 2) -> str:
     return "n/a" if x is None else f"{x:.{nd}f}"
 
 
-def attention_flops(B: int, H: int, N: int, D: int) -> float:
-    """Forward FLOPs = 4*B*H*N^2*D (QK^T + PV). Causal rows use the FULL count until block
-    skipping exists (CONTRACT §3) and carry `flops=full` in notes."""
-    return 4.0 * B * H * N * N * D
+def attention_flops(B: int, H: int, N: int, D: int, causal_half: bool = False) -> float:
+    """Forward FLOPs = 4*B*H*N^2*D (QK^T + PV). A causal row of a kernel that skips the fully
+    masked tiles (fused stages S3+, and the SDPA/flash baselines) counts half of that — the
+    FlashAttention benchmark convention (flops // 2 if causal) — and carries `flops=causal_half`
+    in notes; a causal row of a materialising kernel (S1, S2, torch_unfused, the MATH oracle)
+    keeps the full count and says `flops=full` (CONTRACT §3, protocol rule 5)."""
+    return 4.0 * B * H * N * N * D * (0.5 if causal_half else 1.0)
 
 
 def cfg_string(r: dict, with_dtype: bool = False) -> str:

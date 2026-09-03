@@ -679,7 +679,11 @@ int run_stage(const Options& opt, const DeviceInfo& dev, cudaStream_t stream, bo
   row.B = p.B, row.H = p.H, row.N = p.N, row.D = p.D, row.causal = p.causal ? 1 : 0;
   std::vector<std::string> notes;
   if (smoke_mode) notes.push_back("smoke");
-  if (p.causal) notes.push_back("flops=full");
+  // Protocol rule 5: fused stages (Fused/Wmma/Tuned) skip the fully masked K/V tiles, so their
+  // causal rows are accounted at half the FLOPs (FlashAttention convention); Naive/Tiled still
+  // compute the whole N x N score matrix and keep the full count. The note names the rule.
+  const bool causal_half = p.causal && impl != fa::Impl::Naive && impl != fa::Impl::Tiled;
+  if (p.causal) notes.push_back(causal_half ? "flops=causal_half" : "flops=full");
   if (p.Hkv != p.H) notes.push_back("hkv=" + std::to_string(p.Hkv));
 
   // OOM by design: fp32 NxN intermediates above 25% of TOTAL device memory are not attempted
@@ -784,7 +788,8 @@ int run_stage(const Options& opt, const DeviceInfo& dev, cudaStream_t stream, bo
   notes.push_back("iters=" + std::to_string(iters));
   notes.push_back("warmup=" + std::to_string(warmup));
   if (st.p10 > 0.0 && st.p90 / st.p10 >= kNoiseRatio) notes.push_back("noisy");
-  const double flops = 4.0 * p.B * p.H * static_cast<double>(p.N) * p.N * p.D;
+  const double flops =
+      4.0 * p.B * p.H * static_cast<double>(p.N) * p.N * p.D * (causal_half ? 0.5 : 1.0);
   const double bytes = bytes_moved(impl, p, es);
   row.ms_median = fmt("%.4f", st.median), row.ms_p10 = fmt("%.4f", st.p10),
   row.ms_p90 = fmt("%.4f", st.p90);

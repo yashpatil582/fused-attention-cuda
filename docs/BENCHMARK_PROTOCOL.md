@@ -54,11 +54,16 @@ them ("per BENCHMARK_PROTOCOL rule 2").
 5. **FLOP convention.** `FLOPs = 4 * B * H * N^2 * D` for the forward pass (two GEMMs of
    `2 * N * N * D` each), the same formula as flash-attention's
    `benchmarks/benchmark_flash_attention.py`
-   (`f = 4 * batch * seqlen**2 * nheads * headdim // (2 if causal else 1)`). Causal rows use the
-   **full** count with `notes=flops=full` until block skipping exists (S6); after that the exact
-   block-level fraction `(n + 1) / (2n)` with `n = ceil(N / block)` is used and stated on every
-   table. Never halve the numerator before the kernel actually skips work: reporting the halved count
-   on a kernel that still computes every block fabricates a ~2x. `tflops = FLOPs / (ms_median * 1e-3) / 1e12`.
+   (`f = 4 * batch * seqlen**2 * nheads * headdim // (2 if causal else 1)`). A causal row of a kernel
+   that skips the fully masked K/V tiles (the fused stages S3+, whose loop bound is
+   `ceil(min(i0+BR, N)/BC)`, and the SDPA/flash baselines) uses the **halved** count and says
+   `notes=flops=causal_half`; a causal row of a materialising kernel (S1, S2, `torch_unfused`, the
+   MATH oracle) keeps the **full** count and says `flops=full`, because it really computes every
+   block. The halved count is conservative: a tile-skipping kernel actually executes the fraction
+   `(n + 1) / (2n)` of the full work with `n = ceil(N / BC)` (the diagonal tiles are computed and
+   masked), i.e. 3 % more than half at N = 2048, BC = 64, so the reported TFLOP/s never flatters
+   the kernel. Never halve the numerator for a kernel that still computes every block: that would
+   fabricate a ~2x. `tflops = FLOPs / (ms_median * 1e-3) / 1e12`.
 6. **Bandwidth convention.** `gbps` = **modelled minimum bytes** / time, not measured traffic.
    Fused stages (S3+): Q + K + V + O + LSE = `4 * B * H * N * D * sizeof(dtype) + 4 * B * H * N`.
    Materialising impls add the minimum S and P traffic: write S, read S, write P, read P, each

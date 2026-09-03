@@ -6,7 +6,7 @@
 
 canonical:
   # The two configs profiled with ncu at every stage (same SHA as the bench row).
-  # causal 0 in-window; causal 1 is added from S6 when block skipping exists.
+  # causal 0 for the ncu captures in-window; causal rows come from the sweep (S3+ skip masked tiles).
   C64:  {B: 2, H: 8, N: 2048, D: 64,  causal: 0}
   C128: {B: 2, H: 8, N: 2048, D: 128, causal: 0}
 

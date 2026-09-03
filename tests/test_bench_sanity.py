@@ -110,9 +110,11 @@ def test_rows_are_plausible(path):
             assert int(notes["iters"]) >= MIN_ITERS, (
                 f"{where}: iters={notes['iters']} < {MIN_ITERS} (protocol rule 1)"
             )
-            # Formula drift guard: tflops must be 4*B*H*N^2*D / ms_median, nothing else.
+            # Formula drift guard: tflops must be 4*B*H*N^2*D / ms_median (halved only when the
+            # row says flops=causal_half), nothing else.
             B, H, N, D = (int(r[k]) for k in "BHND")
-            expect = attention_flops(B, H, N, D) / (med * 1e-3) / 1e12
+            causal_half = "flops=causal_half" in r["notes"]
+            expect = attention_flops(B, H, N, D, causal_half=causal_half) / (med * 1e-3) / 1e12
             tflops = to_float(r["tflops"])
             assert tflops is not None and abs(tflops - expect) <= TFLOPS_TOL * expect + 1e-3, (
                 f"{where}: tflops={tflops} but 4BHN^2D/ms gives {expect:.3f}"
