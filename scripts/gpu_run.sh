@@ -34,6 +34,9 @@ while [[ $# -gt 0 ]]; do
 done
 PY=$(command -v python3 || command -v python)
 OUT=bench/results/$GPU; PROF=profiles/$GPU
+# Everything this script prints is also kept in build/gpu_run_stage<N>.log, so a lost notebook
+# cell (Colab reclaim, accidental delete) never loses the SUMMARY or the step logs.
+mkdir -p build; exec > >(tee -a "build/gpu_run_stage${STAGE}.log") 2>&1
 mkdir -p "$OUT" "$PROF" build
 SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 # `-dirty` when a TRACKED source file differs from HEAD (CONTRACT §3: commit = source under
