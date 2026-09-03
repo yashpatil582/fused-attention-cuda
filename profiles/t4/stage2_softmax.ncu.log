@@ -1,0 +1,10 @@
+==PROF== Connected to process 31697 (/content/fa/build/bench/fa_bench)
+==PROF== Profiling "fa_s2_softmax": 0%....50%....100% - 14 passes
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.50/15.64 GB
+CHECK_OK rows=128 heads=2 max_abs_err_o=7.46e-08 (cap 1e-04) max_abs_err_lse=0 (lse not checked for this stage)
+checksum=d887b114d6c4ca8d
+stage 2 tiled B2_H8_N2048_D64 fp32 causal=0: median 59.1623 ms (p10 59.1585, p90 59.1690, min 59.1583, max 59.1694) over 12 iters/10 warmup/4 sets -> 0.290 TFLOP/s, 18.7 GB/s
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+3add37c,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,585,tiled,2,fp32,2,8,2048,64,0,59.1623,59.1585,59.1690,0.290,18.7,check=rows128;clock=unlocked;iters=12;warmup=10
+==PROF== Disconnected from process 31697
+==PROF== Report: /content/fa/profiles/t4/stage2_softmax.ncu-rep

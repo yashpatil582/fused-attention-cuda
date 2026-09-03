@@ -1,0 +1,15 @@
+commit=3add37c
+date_utc=2026-09-03T07:57:44Z
+stage=4
+gpu=t4
+dtype=fp16
+cfg_C64=B2_H8_N2048_D64
+cfg_C128=B2_H8_N2048_D128
+bench=build/bench/fa_bench
+ncu_version=NVIDIA (R) Nsight Compute Command Line Profiler
+ncu_cmd[wmma]=ncu --kernel-name regex:fa_s4_wmma --launch-skip 10 --launch-count 1 --clock-control base --cache-control all --section SpeedOfLight --section SpeedOfLight_RooflineChart --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats --section WarpStateStats --section SchedulerStats --section ComputeWorkloadAnalysis --metrics <ncu_metrics.used.txt> -f -o profiles/t4/stage4_wmma build/bench/fa_bench --stage 4 --cfg B2_H8_N2048_D64 --dtype fp16 --causal 0 --iters 12  (rc=0)
+print_units[wmma]=base
+ncu_cmd[wmma_C128]=ncu --kernel-name regex:fa_s4_wmma --launch-skip 10 --launch-count 1 --clock-control base --cache-control all --section SpeedOfLight --section SpeedOfLight_RooflineChart --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats --section WarpStateStats --section SchedulerStats --section ComputeWorkloadAnalysis --metrics <ncu_metrics.used.txt> -f -o profiles/t4/stage4_wmma_C128 build/bench/fa_bench --stage 4 --cfg B2_H8_N2048_D128 --dtype fp16 --causal 0 --iters 12  (rc=0)
+print_units[wmma_C128]=base
+clock_control=base
+degraded=0

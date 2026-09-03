@@ -1,0 +1,12 @@
+==PROF== Connected to process 18475 (/content/fa/build/bench/fa_bench)
+==PROF== Profiling "fa_s1_pv": 0%....50%...
+==WARNING== Launching the workload is taking more time than expected. If this continues to hang, terminate the profile and re-try by profiling the range of all related launches using '--replay-mode range'. See https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#replay for more details.
+.100% - 14 passes
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.50/15.64 GB
+CHECK_OK rows=128 heads=2 max_abs_err_o=1.02e-07 (cap 1e-04) max_abs_err_lse=0 (lse not checked for this stage)
+checksum=8e8ad868f1d28870
+stage 1 naive B2_H8_N2048_D128 fp32 causal=0: median 817.0919 ms (p10 817.0717, p90 817.1170, min 817.0614, max 817.1173) over 12 iters/10 warmup/4 sets -> 0.042 TFLOP/s, 1.4 GB/s
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+3add37c,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,585,naive,1,fp32,2,8,2048,128,0,817.0919,817.0717,817.1170,0.042,1.4,check=rows128;clock=unlocked;iters=12;warmup=10
+==PROF== Disconnected from process 18475
+==PROF== Report: /content/fa/profiles/t4/stage1_pv_C128.ncu-rep

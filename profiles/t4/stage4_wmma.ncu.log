@@ -1,0 +1,10 @@
+==PROF== Connected to process 52149 (/content/fa/build/bench/fa_bench)
+==PROF== Profiling "fa_s4_wmma": 0%....50%....100% - 14 passes
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.50/15.64 GB
+CHECK_OK rows=128 heads=2 max_abs_err_o=1.98e-05 (cap 1e-02) max_abs_err_lse=6e-07
+checksum=75c00ad3415300aa
+stage 4 wmma B2_H8_N2048_D64 fp16 causal=0: median 3.9484 ms (p10 3.9369, p90 3.9602, min 3.9349, max 3.9609) over 12 iters/10 warmup/4 sets -> 4.351 TFLOP/s, 4.3 GB/s
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+3add37c,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,585,wmma,4,fp16,2,8,2048,64,0,3.9484,3.9369,3.9602,4.351,4.3,check=rows128;clock=unlocked;iters=12;warmup=10
+==PROF== Disconnected from process 52149
+==PROF== Report: /content/fa/profiles/t4/stage4_wmma.ncu-rep

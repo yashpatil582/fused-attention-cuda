@@ -1,0 +1,44 @@
+# compute-sanitizer --tool memcheck  commit=3add37c  date=2026-09-03T06:07:54Z  stage=1  dtype=fp32  rc=0
+========= COMPUTE-SANITIZER
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.48/15.64 GB
+SMOKE_OK checksum=23b80025ce43fa37
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+3add37c,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,900,smoke,0,fp32,1,2,288,64,0,0.1128,0.1127,0.1160,,2.6,smoke;clock=unlocked;iters=3;warmup=1
+CHECK_OK rows=128 heads=2 max_abs_err_o=7.63e-08 (cap 1e-04) max_abs_err_lse=0 (lse not checked for this stage)
+checksum=b03ebc66790b95cb
+stage 1 naive B1_H2_N288_D64 fp32 causal=0: median 52.1723 ms (p10 50.9488, p90 52.2834, min 50.6429, max 52.3112) over 3 iters/1 warmup/4 sets -> 0.001 TFLOP/s, 0.1 GB/s
+SMOKE_STAGE_OK stage=1
+========= ERROR SUMMARY: 0 errors
+========= COMPUTE-SANITIZER
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.48/15.64 GB
+SMOKE_OK checksum=252abb1d8b41fd02
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+3add37c,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,1590,smoke,0,fp32,1,2,288,128,0,0.2024,0.2019,0.2047,,2.9,smoke;clock=unlocked;iters=3;warmup=1
+CHECK_OK rows=128 heads=2 max_abs_err_o=8.32e-08 (cap 1e-04) max_abs_err_lse=0 (lse not checked for this stage)
+checksum=f0066a12ec6d3235
+stage 1 naive B1_H2_N288_D128 fp32 causal=0: median 100.6576 ms (p10 100.2264, p90 101.3812, min 100.1186, max 101.5621) over 3 iters/1 warmup/4 sets -> 0.001 TFLOP/s, 0.0 GB/s
+SMOKE_STAGE_OK stage=1
+========= ERROR SUMMARY: 0 errors
+
+# compute-sanitizer --tool racecheck  commit=3add37c  date=2026-09-03T06:07:54Z  stage=1  dtype=fp32  rc=0
+========= COMPUTE-SANITIZER
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.48/15.64 GB
+SMOKE_OK checksum=23b80025ce43fa37
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+3add37c,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,1590,smoke,0,fp32,1,2,288,64,0,1.4642,1.3918,1.5050,,0.2,smoke;clock=unlocked;iters=3;warmup=1
+CHECK_OK rows=128 heads=2 max_abs_err_o=7.63e-08 (cap 1e-04) max_abs_err_lse=0 (lse not checked for this stage)
+checksum=b03ebc66790b95cb
+stage 1 naive B1_H2_N288_D64 fp32 causal=0: median 666.9942 ms (p10 621.8417, p90 706.9657, min 610.5536, max 716.9586) over 3 iters/1 warmup/4 sets -> 0.000 TFLOP/s, 0.0 GB/s
+SMOKE_STAGE_OK stage=1
+========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)
+========= COMPUTE-SANITIZER
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.48/15.64 GB
+SMOKE_OK checksum=252abb1d8b41fd02
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+3add37c,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,1590,smoke,0,fp32,1,2,288,128,0,2.9967,2.8468,3.0004,,0.2,smoke;clock=unlocked;iters=3;warmup=1
+CHECK_OK rows=128 heads=2 max_abs_err_o=8.32e-08 (cap 1e-04) max_abs_err_lse=0 (lse not checked for this stage)
+checksum=f0066a12ec6d3235
+stage 1 naive B1_H2_N288_D128 fp32 causal=0: median 383.0706 ms (p10 382.3135, p90 383.4832, min 382.1243, max 383.5863) over 3 iters/1 warmup/4 sets -> 0.000 TFLOP/s, 0.0 GB/s
+SMOKE_STAGE_OK stage=1
+========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)
+

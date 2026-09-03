@@ -1,0 +1,23 @@
+commit=3add37c
+date_utc=2026-09-03T06:05:22Z
+stage=1
+gpu=t4
+dtype=fp32
+cfg_C64=B2_H8_N2048_D64
+cfg_C128=B2_H8_N2048_D128
+bench=build/bench/fa_bench
+ncu_version=NVIDIA (R) Nsight Compute Command Line Profiler
+ncu_cmd[qk]=ncu --kernel-name regex:fa_s1_qk --launch-skip 10 --launch-count 1 --clock-control base --cache-control all --section SpeedOfLight --section SpeedOfLight_RooflineChart --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats --section WarpStateStats --section SchedulerStats --section ComputeWorkloadAnalysis --metrics <ncu_metrics.used.txt> -f -o profiles/t4/stage1_qk build/bench/fa_bench --stage 1 --cfg B2_H8_N2048_D64 --dtype fp32 --causal 0 --iters 12  (rc=0)
+print_units[qk]=base
+ncu_cmd[softmax]=ncu --kernel-name regex:fa_s1_softmax --launch-skip 10 --launch-count 1 --clock-control base --cache-control all --section SpeedOfLight --section SpeedOfLight_RooflineChart --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats --section WarpStateStats --section SchedulerStats --section ComputeWorkloadAnalysis --metrics <ncu_metrics.used.txt> -f -o profiles/t4/stage1_softmax build/bench/fa_bench --stage 1 --cfg B2_H8_N2048_D64 --dtype fp32 --causal 0 --iters 12  (rc=0)
+print_units[softmax]=base
+ncu_cmd[pv]=ncu --kernel-name regex:fa_s1_pv --launch-skip 10 --launch-count 1 --clock-control base --cache-control all --section SpeedOfLight --section SpeedOfLight_RooflineChart --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats --section WarpStateStats --section SchedulerStats --section ComputeWorkloadAnalysis --metrics <ncu_metrics.used.txt> -f -o profiles/t4/stage1_pv build/bench/fa_bench --stage 1 --cfg B2_H8_N2048_D64 --dtype fp32 --causal 0 --iters 12  (rc=0)
+print_units[pv]=base
+ncu_cmd[qk_C128]=ncu --kernel-name regex:fa_s1_qk --launch-skip 10 --launch-count 1 --clock-control base --cache-control all --section SpeedOfLight --section SpeedOfLight_RooflineChart --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats --section WarpStateStats --section SchedulerStats --section ComputeWorkloadAnalysis --metrics <ncu_metrics.used.txt> -f -o profiles/t4/stage1_qk_C128 build/bench/fa_bench --stage 1 --cfg B2_H8_N2048_D128 --dtype fp32 --causal 0 --iters 12  (rc=0)
+print_units[qk_C128]=base
+ncu_cmd[softmax_C128]=ncu --kernel-name regex:fa_s1_softmax --launch-skip 10 --launch-count 1 --clock-control base --cache-control all --section SpeedOfLight --section SpeedOfLight_RooflineChart --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats --section WarpStateStats --section SchedulerStats --section ComputeWorkloadAnalysis --metrics <ncu_metrics.used.txt> -f -o profiles/t4/stage1_softmax_C128 build/bench/fa_bench --stage 1 --cfg B2_H8_N2048_D128 --dtype fp32 --causal 0 --iters 12  (rc=0)
+print_units[softmax_C128]=base
+ncu_cmd[pv_C128]=ncu --kernel-name regex:fa_s1_pv --launch-skip 10 --launch-count 1 --clock-control base --cache-control all --section SpeedOfLight --section SpeedOfLight_RooflineChart --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats --section WarpStateStats --section SchedulerStats --section ComputeWorkloadAnalysis --metrics <ncu_metrics.used.txt> -f -o profiles/t4/stage1_pv_C128 build/bench/fa_bench --stage 1 --cfg B2_H8_N2048_D128 --dtype fp32 --causal 0 --iters 12  (rc=0)
+print_units[pv_C128]=base
+clock_control=base
+degraded=0

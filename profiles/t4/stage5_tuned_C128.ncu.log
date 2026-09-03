@@ -1,0 +1,10 @@
+==PROF== Connected to process 63837 (/content/fa/build/bench/fa_bench)
+==PROF== Profiling "fa_s5_tuned": 0%....50%....100% - 14 passes
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.50/15.64 GB
+CHECK_OK rows=128 heads=2 max_abs_err_o=2.27e-05 (cap 1e-02) max_abs_err_lse=5.67e-07
+checksum=a62f85d981f0c9de
+stage 5 tuned B2_H8_N2048_D128 fp16 causal=0: median 9.8984 ms (p10 9.8711, p90 9.9038, min 9.8649, max 9.9050) over 12 iters/10 warmup/4 sets -> 3.471 TFLOP/s, 3.4 GB/s
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+d835758,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,585,tuned,5,fp16,2,8,2048,128,0,9.8984,9.8711,9.9038,3.471,3.4,check=rows128;clock=unlocked;iters=12;warmup=10
+==PROF== Disconnected from process 63837
+==PROF== Report: /content/fa/profiles/t4/stage5_tuned_C128.ncu-rep

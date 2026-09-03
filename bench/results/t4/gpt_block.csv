@@ -1,0 +1,3 @@
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+d835758,Tesla T4,580.82.07,12.8.93,2.11.0+cu128,2025.1.1.0,585,gpt_sdpa_efficient,0,fp16,8,12,1024,64,1,9.5702,9.5580,9.5929,,,tok_s=855986.9;attn_ms=2.0361;attn_pct=21.3;T=1024;iters=50;warm;no_flush;flops=full;run=2026-09-03T08:17:14Z;clock_lock=585
+d835758,Tesla T4,580.82.07,12.8.93,2.11.0+cu128,2025.1.1.0,585,gpt_fused,5,fp16,8,12,1024,64,1,11.6574,11.6474,11.6701,,,tok_s=702728.2;attn_ms=4.1160;attn_pct=35.3;T=1024;iters=50;warm;no_flush;flops=full;run=2026-09-03T08:17:14Z;clock_lock=585

@@ -1,0 +1,20 @@
+==PROF== Connected to process 60783 (/content/fa/build/bench/fa_bench)
+==PROF== Profiling "fill_uniform" - 0 (1/1): 0%....50%....100% - 1 pass
+fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.50/15.64 GB
+SMOKE_OK checksum=a373a21cfb9d3233
+commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
+d835758,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,585,smoke,0,fp32,2,8,2048,64,0,0.0748,0.0747,0.0752,,224.2,smoke;clock=unlocked;iters=3;warmup=1
+CHECK_OK rows=128 heads=2 max_abs_err_o=1.98e-05 (cap 1e-02) max_abs_err_lse=6e-07
+checksum=75c00ad3415300aa
+stage 5 tuned C64 fp16 causal=0: median 3.6438 ms (p10 3.6437, p90 3.6461, min 3.6437, max 3.6467) over 3 iters/1 warmup/4 sets -> 4.715 TFLOP/s, 4.6 GB/s
+SMOKE_STAGE_OK stage=5
+==PROF== Disconnected from process 60783
+[60783] fa_bench@127.0.0.1
+  void <unnamed>::fill_uniform<float>(T1 *, unsigned long, unsigned int) (2048, 1, 1)x(256, 1, 1), Context 1, Stream 13, Device 0, CC 7.5
+    Section: Command line profiler metrics
+    ---------------------- ----------- ------------
+    Metric Name            Metric Unit Metric Value
+    ---------------------- ----------- ------------
+    sm__cycles_elapsed.avg       cycle    21,677.40
+    ---------------------- ----------- ------------
+

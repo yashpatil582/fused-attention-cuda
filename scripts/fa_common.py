@@ -184,6 +184,11 @@ def stage_csvs(results_dir: str | os.PathLike) -> dict[str, list[str]]:
     """{gpu_dir_name: [stage1.csv, stage2.csv, ...]} sorted by stage number."""
     out: dict[str, list[str]] = {}
     for p in sorted(glob.glob(os.path.join(str(results_dir), "*", "stage*.csv"))):
+        # Only the per-stage result files: `stage5_tuning.csv` (the S5 A/B sweep, every variant
+        # under FA_FORCE_BR/BC/FA_S5_PREFETCH) must not feed summary.csv or the README, whose
+        # S5 column is the DEFAULT configuration only.
+        if not re.fullmatch(r"stage\d+\.csv", os.path.basename(p)):
+            continue
         gpu = os.path.basename(os.path.dirname(p))
         out.setdefault(gpu, []).append(p)
     for gpu in out:
