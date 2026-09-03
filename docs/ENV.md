@@ -74,9 +74,9 @@ the lead replaces it with the datasheet number and URL. `tests/test_bench_sanity
 by `fp32_tflops` and fp16/bf16 rows by `fp16_tensor_tflops` / `bf16_tensor_tflops`.
 
 ```
-ROOF fp32_tflops = TBD TFLOP/s (spec, not measured; TBD datasheet URL)
-ROOF fp16_tensor_tflops = TBD TFLOP/s (spec, not measured; TBD datasheet URL)
-ROOF dram_gbps = TBD GB/s (spec, not measured; TBD datasheet URL)
+ROOF fp32_tflops = 8.1 TFLOP/s (spec, not measured; https://www.nvidia.com/en-us/data-center/tesla-t4/ read 2026-09-02)
+ROOF fp16_tensor_tflops = 65 TFLOP/s (spec, not measured; https://www.nvidia.com/en-us/data-center/tesla-t4/ read 2026-09-02)
+ROOF dram_gbps = 320 GB/s (spec, not measured; https://www.nvidia.com/en-us/data-center/tesla-t4/ read 2026-09-02)
 ```
 
 ## Architectural constants used by the kernels (cited, not measured)
