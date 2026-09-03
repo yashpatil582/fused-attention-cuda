@@ -8,7 +8,7 @@ file first and never edit files outside their ownership list.
 ## 1. Kernel API
 `include/fa/attention.cuh` (verbatim, frozen): `fa::forward(Impl, Dtype, q, k, v, o, lse, workspace, Params, stream)`,
 `fa::workspace_bytes`, `fa::impl_supports`, `fa::set_debug_overrides`, `fa::impl_name`, `fa::dtype_name`.
-Layouts: q/k/v/o `[B, H, N, D]` contiguous; lse `[B, H, N]` fp32. Causal mask is top-left aligned (torch SDPA
+Layouts: q/k/v/o `[B, H, N, D]` contiguous; lse `[B, H, N]` fp32. Tensor bases must be 16-byte aligned (S2+ use float4/uint2 vector loads; ext.cpp checks this). Causal mask is top-left aligned (torch SDPA
 `is_causal` semantics for Nq == Nkv). Default scale `1/sqrt(D)`. `N % 32 == 0` enforced in-window.
 
 ## 2. Kernel names (for `ncu --kernel-name regex:`)

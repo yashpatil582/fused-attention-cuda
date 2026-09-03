@@ -50,7 +50,7 @@ docker run --rm --platform "$PLATFORM" \
     -v "$ROOT:/w" -w /w -e FA_ARCHS="$FA_ARCHS" "$IMAGE" bash -c '
         set -euo pipefail
         nvcc --version | tail -1
-        cmake --preset docker -DCMAKE_CUDA_ARCHITECTURES="$FA_ARCHS"
+        cmake --fresh --preset docker -DCMAKE_CUDA_ARCHITECTURES="$FA_ARCHS"  # --fresh: a cached arch list must never win over FA_ARCHS
         cmake --build --preset docker
     ' 2>&1 | tee "$LOG"
 status=${PIPESTATUS[0]}

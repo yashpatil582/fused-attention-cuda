@@ -90,6 +90,13 @@ fa::Params make_params(const at::Tensor& q, const at::Tensor& k, const at::Tenso
               v.dim(), "-D");
   TORCH_CHECK(q.is_contiguous() && k.is_contiguous() && v.is_contiguous(),
               "fused_attn: q, k, v must be contiguous [B, H, N, D] (call .contiguous())");
+  // S2+ kernels use 16-byte vector loads (float4 / uint2) and only check row strides, so the
+  // tensor bases must be 16-byte aligned. Fresh allocations always are; a contiguous offset
+  // view such as t[2:].view(...) is not, and would fault inside the kernel instead of here.
+  for (const at::Tensor* t : {&q, &k, &v}) {
+    TORCH_CHECK(reinterpret_cast<std::uintptr_t>(t->data_ptr()) % 16 == 0,
+                "fused_attn: q/k/v must be 16-byte aligned (use a fresh contiguous tensor)");
+  }
   TORCH_CHECK(q.scalar_type() == k.scalar_type() && q.scalar_type() == v.scalar_type(),
               "fused_attn: q, k, v must share one dtype; got ", q.scalar_type(), ", ",
               k.scalar_type(), ", ", v.scalar_type());
