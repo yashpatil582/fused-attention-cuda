@@ -162,12 +162,20 @@ elif [ -z "$BENCH" ]; then SANITIZER="fa_bench not built"
 else
   SANITIZER=""
   : > "$OUT/stage${STAGE}_sanitizer.txt"   # one run per file: reruns replace, never accumulate
+  # Small shapes on purpose: memcheck instruments every global access, so the naive kernels at
+  # C64 (67M threads x D loads) take many minutes under it; N=288 (= 9*32, not a multiple of 64)
+  # still exercises multi-tile loops, a partial last tile for BC=64, and both head dims.
+  SAN_CFGS="B1_H2_N288_D64 B1_H2_N288_D128"
   for tool in memcheck racecheck; do
     # --error-exitcode: both tools exit 9 on any reported error, independent of the summary
     # wording (memcheck: `ERROR SUMMARY: N errors`; racecheck: `RACECHECK SUMMARY: N hazards
     # displayed (E errors, W warnings)`). Both formats are parsed for the summary line only.
-    set +e; "$CS" --tool $tool --error-exitcode 9 "$BENCH" --smoke --stage "$STAGE" --dtype "$DTYPE" > "build/sanitizer_$tool.log" 2>&1; rc=$?; set -e
-    errs=$(grep -oE 'ERROR SUMMARY: [0-9]+ error|RACECHECK SUMMARY: [0-9]+ hazards? displayed \([0-9]+ error' "build/sanitizer_$tool.log" | grep -oE '[0-9]+ error' | grep -oE '[0-9]+' | tail -1 || true)
+    : > "build/sanitizer_$tool.log"; rc=0
+    for cfg in $SAN_CFGS; do
+      set +e; "$CS" --tool $tool --error-exitcode 9 "$BENCH" --smoke --stage "$STAGE" --dtype "$DTYPE" --cfg "$cfg" >> "build/sanitizer_$tool.log" 2>&1; r=$?; set -e
+      [ $r -ne 0 ] && rc=$r
+    done
+    errs=$(grep -oE 'ERROR SUMMARY: [0-9]+ error|RACECHECK SUMMARY: [0-9]+ hazards? displayed \([0-9]+ error' "build/sanitizer_$tool.log" | grep -oE '[0-9]+ error' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}' || true)
     errs=${errs:-?}
     SANITIZER="$SANITIZER$tool=$errs errors(rc=$rc) "
     { echo "# compute-sanitizer --tool $tool  commit=$SHA  date=$DATE_UTC  stage=$STAGE  dtype=$DTYPE  rc=$rc"; cat "build/sanitizer_$tool.log"; echo; } >> "$OUT/stage${STAGE}_sanitizer.txt"
