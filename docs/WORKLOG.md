@@ -97,3 +97,16 @@ Running total: TBD (cap ~$25, <= 12 GPU-hours in-window).
 - Also: gpu_run.sh now tees its whole output to build/gpu_run_stage<N>.log (a deleted notebook cell
   cost the S1 summary once; Colab's ctrl+m z restored it).
 - Still no GH_PAT in Colab Secrets: results are read from the notebook; the runner push waits.
+
+### 2026-09-03 05:50–06:05 UTC — S2, S3, S4 validated on the T4 in one 9-minute batch
+
+- All three stages: GPU tests green (S2 47 passed; S3 75 passed incl. tile invariance and LSE; S4 47 passed
+  + 31 fp32 cases skipped by design), compute-sanitizer clean on the N=288 shapes, clocks locked to 585 MHz,
+  Nsight captures written (6 kernels for S2, 2 for S3, 2 for S4).
+- Canonical-config medians from that batch (fp32 for S1–S3, fp16 for S4; SDPA = EFFICIENT_ATTENTION backend):
+  C64 = B2 H8 N2048 D64: naive 410.6 ms → tiled 59.2 ms → fused 25.1 ms → wmma 3.94 ms (SDPA fp32 11.6 ms,
+  SDPA fp16 2.49 ms); C128: 817.1 → 115.8 → 94.3 → 11.17 ms (SDPA fp32 20.9 ms, fp16 5.00 ms).
+  S4 = 63 % of SDPA fp16 throughput at D=64, 45 % at D=128; fp32 S3 loses to SDPA as predicted in STAGES.md.
+- These rows were stamped `f686962-dirty` because a docs generator had run inside the Colab checkout before
+  the stage runs; `test_bench_sanity` rejects dirty commits, so the batch is being re-run from a clean tree at
+  3add37c (canonical configs + the 48-config sweep for every stage). Only the clean rows will be committed.
