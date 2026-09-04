@@ -70,7 +70,7 @@ TFLOP/s in the CSVs use 4·B·H·N²·D; causal rows are credited half of that
 (S5 onward) — earlier sweep rows carry `flops=full`. Speed baseline is SDPA pinned to
 `EFFICIENT_ATTENTION`; `SDPA MATH fp32` is the correctness oracle, not a speed baseline.
 
-**`t4`** — GPU `Tesla T4`, driver 580.82.07, nvcc 12.8.93, torch 2.11.0+cu128, ncu 2025.1.1.0, commit(s) `15b83a5, 3add37c, d835758`, clocks unlocked (SM clock sampled during each timed loop; `clock_mhz` = median).
+**`t4`** — GPU `Tesla T4`, driver 580.82.07, nvcc 12.8.93, torch 2.11.0+cu128, ncu 2025.1.1.0, commit(s) `15b83a5, 371f406, 3add37c`, clocks unlocked (SM clock sampled during each timed loop; `clock_mhz` = median).
 
 **fp16, causal=0**
 
@@ -93,10 +93,10 @@ TFLOP/s in the CSVs use 4·B·H·N²·D; causal rows are credited half of that
 | `B1_H8_N1024_D128` | 1.653 | 1.556 | 0.778 | refused | refused | 2.788 | 0.709 | refused | — | 50% (tuned) |
 | `B8_H32_N1024_D128` | 48.007 | 40.248 | 19.818 | refused | refused | 80.409 | 20.558 | refused | — | 49% (tuned) |
 | `B1_H8_N2048_D64` | 2.118 | 1.956 | 1.412 | refused | refused | 7.296 | 2.517 | refused | — | 72% (tuned) |
-| `B2_H8_N2048_D64` | 3.944 | 3.629 | 2.486 | refused | refused | 14.065 | 4.813 | refused | — | 69% (tuned) |
+| `B2_H8_N2048_D64` | 3.944 | 3.637 | 2.485 | refused | refused | 14.060 | 4.815 | refused | — | 68% (tuned) |
 | `B8_H32_N2048_D64` | 61.661 | 56.922 | 37.207 | refused | refused | OOM by design | OOM by design | refused | — | 65% (tuned) |
 | `B1_H8_N2048_D128` | 5.640 | 4.532 | 2.668 | refused | refused | 10.232 | 2.745 | refused | — | 59% (tuned) |
-| `B2_H8_N2048_D128` | 11.170 | 9.873 | 5.001 | refused | refused | 19.866 | 5.265 | refused | — | 51% (tuned) |
+| `B2_H8_N2048_D128` | 11.170 | 8.453 | 4.997 | refused | refused | 19.861 | 5.264 | refused | — | 59% (tuned) |
 | `B8_H32_N2048_D128` | 176.284 | 132.211 | 77.568 | refused | refused | OOM by design | OOM by design | refused | — | 59% (tuned) |
 | `B1_H8_N4096_D64` | 7.305 | 6.674 | 4.908 | refused | refused | 30.010 | 13.720 | refused | — | 74% (tuned) |
 | `B8_H32_N4096_D64` | 228.974 | 209.299 | 147.203 | refused | refused | OOM by design | OOM by design | refused | — | 70% (tuned) |
@@ -778,19 +778,19 @@ TFLOP/s in the CSVs use 4·B·H·N²·D; causal rows are credited half of that
 | `B2_H8_N2048_D64` | tiled | 2 | 59.1586 | 59.1527 | 59.1668 | 0.290 | 18.7 | 585 | `3add37c` | run=2026-09-03T06:51:26Z;clock_lock=585;iters=100;max_err=4.769e-07 torch_same_dtype_err=4.252e-07 tol=1.850e-06 cap=1e-04 |
 | `B2_H8_N2048_D64` | fused | 3 | 25.1035 | 24.8168 | 25.4566 | 0.684 | 1.3 | 585 | `3add37c` | run=2026-09-03T07:12:41Z;clock_lock=585;iters=100;max_err=4.710e-07 torch_same_dtype_err=4.252e-07 tol=1.850e-06 cap=1e-04 |
 | `B2_H8_N2048_D64` | wmma | 4 | 3.9442 | 3.9302 | 3.9564 | 4.356 | 4.3 | 585 | `3add37c` | run=2026-09-03T07:57:33Z;clock_lock=585;iters=127;max_err=1.216e-04 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
-| `B2_H8_N2048_D64` | tuned | 5 | 3.6286 | 3.6211 | 3.6403 | 4.735 | 4.7 | 585 | `d835758` | run=2026-09-03T08:17:02Z;clock_lock=585;iters=137;max_err=1.216e-04 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
+| `B2_H8_N2048_D64` | tuned | 5 | 3.6374 | 3.6308 | 3.6453 | 4.723 | 4.6 | 585 | `371f406` | run=2026-09-04T00:33:58Z;clock_lock=585;iters=137;max_err=1.216e-04 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
 | `B2_H8_N2048_D64` | sdpa_efficient | 0 | 11.6073 | 11.5976 | 11.6183 | 1.480 | 2.9 | 585 | `3add37c` | run=2026-09-03T07:12:41Z;clock_lock=585;iters=100;max_err=5.612e-07 torch_same_dtype_err=4.252e-07 tol=1.850e-06 cap=1e-04 |
-| `B2_H8_N2048_D64` | sdpa_efficient | 0 | 2.4860 | 2.4821 | 2.4904 | 6.911 | 6.8 | 585 | `d835758` | run=2026-09-03T08:17:02Z;clock_lock=585;iters=199;max_err=1.216e-04 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
+| `B2_H8_N2048_D64` | sdpa_efficient | 0 | 2.4850 | 2.4804 | 2.4904 | 6.913 | 6.8 | 585 | `371f406` | run=2026-09-04T00:33:58Z;clock_lock=585;iters=198;max_err=1.216e-04 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
 | `B2_H8_N2048_D64` | sdpa_flash | 0 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T07:12:41Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
-| `B2_H8_N2048_D64` | sdpa_flash | 0 | — | — | — | — | — | — | `d835758` | run=2026-09-03T08:17:02Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
+| `B2_H8_N2048_D64` | sdpa_flash | 0 | — | — | — | — | — | — | `371f406` | run=2026-09-04T00:33:58Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
 | `B2_H8_N2048_D64` | sdpa_cudnn | 0 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T07:12:41Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
-| `B2_H8_N2048_D64` | sdpa_cudnn | 0 | — | — | — | — | — | — | `d835758` | run=2026-09-03T08:17:02Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
+| `B2_H8_N2048_D64` | sdpa_cudnn | 0 | — | — | — | — | — | — | `371f406` | run=2026-09-04T00:33:58Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
 | `B2_H8_N2048_D64` | sdpa_math_fp32 | 0 | 14.0648 | 14.0472 | 14.0778 | 1.221 | 78.7 | 585 | `3add37c` | oracle_not_speed_baseline;run=2026-09-03T07:12:41Z;clock_lock=585;iters=100;max_err=5.365e-07 torch_same_dtype_err=4.252e-07 tol=1.850e-06 cap=1e-04 |
-| `B2_H8_N2048_D64` | sdpa_math_fp32 | 0 | 14.0645 | 14.0503 | 14.0774 | 1.222 | 78.7 | 585 | `d835758` | oracle_not_speed_baseline;run=2026-09-03T08:17:02Z;clock_lock=585;iters=100;max_err=4.176e-07 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
+| `B2_H8_N2048_D64` | sdpa_math_fp32 | 0 | 14.0596 | 14.0459 | 14.0719 | 1.222 | 78.8 | 585 | `371f406` | oracle_not_speed_baseline;run=2026-09-04T00:33:58Z;clock_lock=585;iters=100;max_err=4.176e-07 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
 | `B2_H8_N2048_D64` | torch_unfused | 0 | 12.1748 | 12.1620 | 12.1877 | 1.411 | 90.9 | 585 | `3add37c` | run=2026-09-03T07:12:41Z;clock_lock=585;iters=100;max_err=4.769e-07 torch_same_dtype_err=4.252e-07 tol=1.850e-06 cap=1e-04 |
-| `B2_H8_N2048_D64` | torch_unfused | 0 | 4.8133 | 4.8071 | 4.8207 | 3.569 | 115.0 | 585 | `d835758` | run=2026-09-03T08:17:02Z;clock_lock=585;iters=104;max_err=2.687e-04 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
+| `B2_H8_N2048_D64` | torch_unfused | 0 | 4.8147 | 4.8087 | 4.8210 | 3.568 | 115.0 | 585 | `371f406` | run=2026-09-04T00:33:58Z;clock_lock=585;iters=104;max_err=2.687e-04 torch_same_dtype_err=2.687e-04 tol=5.385e-04 cap=1e-02 |
 | `B2_H8_N2048_D64` | flash_attn | 0 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T07:12:41Z;backend_refused:not importable: No module named 'flash_attn' |
-| `B2_H8_N2048_D64` | flash_attn | 0 | — | — | — | — | — | — | `d835758` | run=2026-09-03T08:17:02Z;backend_refused:not importable: No module named 'flash_attn' |
+| `B2_H8_N2048_D64` | flash_attn | 0 | — | — | — | — | — | — | `371f406` | run=2026-09-04T00:33:58Z;backend_refused:not importable: No module named 'flash_attn' |
 | `B8_H32_N2048_D64` | naive | 1 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T06:08:39Z;oom_by_design |
 | `B8_H32_N2048_D64` | naive | 1 | — | — | — | — | — | — | `3add37c` | flops=full;run=2026-09-03T06:08:39Z;oom_by_design |
 | `B8_H32_N2048_D64` | tiled | 2 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T06:54:17Z;oom_by_design |
@@ -863,19 +863,19 @@ TFLOP/s in the CSVs use 4·B·H·N²·D; causal rows are credited half of that
 | `B2_H8_N2048_D128` | tiled | 2 | 115.8372 | 115.8314 | 115.8494 | 0.297 | 9.8 | 585 | `3add37c` | run=2026-09-03T06:51:26Z;clock_lock=585;iters=100;max_err=4.762e-07 torch_same_dtype_err=3.636e-07 tol=1.727e-06 cap=1e-04 |
 | `B2_H8_N2048_D128` | fused | 3 | 94.3486 | 93.6612 | 94.8090 | 0.364 | 0.7 | 585 | `3add37c` | run=2026-09-03T07:12:41Z;clock_lock=585;iters=100;max_err=4.896e-07 torch_same_dtype_err=3.636e-07 tol=1.727e-06 cap=1e-04 |
 | `B2_H8_N2048_D128` | wmma | 4 | 11.1697 | 11.0973 | 11.2300 | 3.076 | 3.0 | 585 | `3add37c` | run=2026-09-03T07:57:33Z;clock_lock=585;iters=100;max_err=7.863e-05 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
-| `B2_H8_N2048_D128` | tuned | 5 | 9.8732 | 9.8482 | 9.9042 | 3.480 | 3.4 | 585 | `d835758` | run=2026-09-03T08:17:02Z;clock_lock=585;iters=100;max_err=7.863e-05 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
+| `B2_H8_N2048_D128` | tuned | 5 | 8.4527 | 8.4337 | 8.4704 | 4.065 | 4.0 | 585 | `371f406` | run=2026-09-04T00:33:58Z;clock_lock=585;iters=100;max_err=7.863e-05 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
 | `B2_H8_N2048_D128` | sdpa_efficient | 0 | 20.8658 | 20.8588 | 20.8734 | 1.647 | 3.2 | 585 | `3add37c` | run=2026-09-03T07:12:41Z;clock_lock=585;iters=100;max_err=4.110e-07 torch_same_dtype_err=3.636e-07 tol=1.727e-06 cap=1e-04 |
-| `B2_H8_N2048_D128` | sdpa_efficient | 0 | 5.0012 | 4.9897 | 5.0198 | 6.870 | 6.7 | 585 | `d835758` | run=2026-09-03T08:17:02Z;clock_lock=585;iters=100;max_err=7.863e-05 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
+| `B2_H8_N2048_D128` | sdpa_efficient | 0 | 4.9972 | 4.9833 | 5.0115 | 6.876 | 6.7 | 585 | `371f406` | run=2026-09-04T00:33:58Z;clock_lock=585;iters=100;max_err=7.863e-05 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
 | `B2_H8_N2048_D128` | sdpa_flash | 0 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T07:12:41Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
-| `B2_H8_N2048_D128` | sdpa_flash | 0 | — | — | — | — | — | — | `d835758` | run=2026-09-03T08:17:02Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
+| `B2_H8_N2048_D128` | sdpa_flash | 0 | — | — | — | — | — | — | `371f406` | run=2026-09-04T00:33:58Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
 | `B2_H8_N2048_D128` | sdpa_cudnn | 0 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T07:12:41Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
-| `B2_H8_N2048_D128` | sdpa_cudnn | 0 | — | — | — | — | — | — | `d835758` | run=2026-09-03T08:17:02Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
+| `B2_H8_N2048_D128` | sdpa_cudnn | 0 | — | — | — | — | — | — | `371f406` | run=2026-09-04T00:33:58Z;backend_refused:Memory efficient kernel not used because: (Triggered internally at /pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:986.) | Memory Efficient attention has been runtime disabled. (Triggere |
 | `B2_H8_N2048_D128` | sdpa_math_fp32 | 0 | 19.8742 | 19.8575 | 19.8862 | 1.729 | 57.4 | 585 | `3add37c` | oracle_not_speed_baseline;run=2026-09-03T07:12:41Z;clock_lock=585;iters=100;max_err=4.219e-07 torch_same_dtype_err=3.636e-07 tol=1.727e-06 cap=1e-04 |
-| `B2_H8_N2048_D128` | sdpa_math_fp32 | 0 | 19.8655 | 19.8539 | 19.8802 | 1.730 | 57.4 | 585 | `d835758` | oracle_not_speed_baseline;run=2026-09-03T08:17:02Z;clock_lock=585;iters=100;max_err=3.628e-07 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
+| `B2_H8_N2048_D128` | sdpa_math_fp32 | 0 | 19.8614 | 19.8492 | 19.8725 | 1.730 | 57.4 | 585 | `371f406` | oracle_not_speed_baseline;run=2026-09-04T00:33:58Z;clock_lock=585;iters=100;max_err=3.628e-07 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
 | `B2_H8_N2048_D128` | torch_unfused | 0 | 17.8404 | 17.8269 | 17.8524 | 1.926 | 63.9 | 585 | `3add37c` | run=2026-09-03T07:12:41Z;clock_lock=585;iters=100;max_err=4.762e-07 torch_same_dtype_err=3.636e-07 tol=1.727e-06 cap=1e-04 |
-| `B2_H8_N2048_D128` | torch_unfused | 0 | 5.2654 | 5.2583 | 5.2704 | 6.526 | 108.3 | 585 | `d835758` | run=2026-09-03T08:17:02Z;clock_lock=585;iters=100;max_err=5.256e-04 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
+| `B2_H8_N2048_D128` | torch_unfused | 0 | 5.2643 | 5.2576 | 5.2696 | 6.527 | 108.4 | 585 | `371f406` | run=2026-09-04T00:33:58Z;clock_lock=585;iters=100;max_err=5.256e-04 torch_same_dtype_err=5.256e-04 tol=1.052e-03 cap=1e-02 |
 | `B2_H8_N2048_D128` | flash_attn | 0 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T07:12:41Z;backend_refused:not importable: No module named 'flash_attn' |
-| `B2_H8_N2048_D128` | flash_attn | 0 | — | — | — | — | — | — | `d835758` | run=2026-09-03T08:17:02Z;backend_refused:not importable: No module named 'flash_attn' |
+| `B2_H8_N2048_D128` | flash_attn | 0 | — | — | — | — | — | — | `371f406` | run=2026-09-04T00:33:58Z;backend_refused:not importable: No module named 'flash_attn' |
 | `B8_H32_N2048_D128` | naive | 1 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T06:08:39Z;oom_by_design |
 | `B8_H32_N2048_D128` | tiled | 2 | — | — | — | — | — | — | `3add37c` | run=2026-09-03T06:54:17Z;oom_by_design |
 | `B8_H32_N2048_D128` | fused | 3 | 1457.0917 | 1448.1048 | 1465.5594 | 0.377 | 0.7 | 585 | `3add37c` | run=2026-09-03T07:15:25Z;clock_lock=585;iters=100;max_err=6.331e-07 torch_same_dtype_err=2.917e-07 tol=1.583e-06 cap=1e-04 |
@@ -1069,13 +1069,40 @@ each launch.
 | S3 | `fused` | C64 | `3add37c` | 25.2 | 25.2 | 38.69 MB | 0.5 | 0.0 | 96.1 | 55505 | 6.3 | 162 | 0.00 | long_scoreboard 6.8, barrier 0.3, mio_throttle 0.1 |
 | S4 | `wmma` | C128 | `3add37c` | 16.7 | 29.6 | 38.41 MB | 1.1 | 0.0 | 97.7 | 19369461 | 6.2 | 168 | 13.36 | long_scoreboard 17.4, mio_throttle 8.7, barrier 7.5 |
 | S4 | `wmma` | C64 | `3add37c` | 21.6 | 37.7 | 19.13 MB | 1.5 | 0.0 | 95.5 | 9861436 | 12.5 | 150 | 18.61 | mio_throttle 19.6, long_scoreboard 11.4, barrier 7.1 |
-| S5 | `tuned` | C128 | `15b83a5` | 22.8 | 41.5 | 38.28 MB | 1.4 | 0.0 | 95.4 | 26904175 | 12.5 | 168 | 17.42 | barrier 18.3, mio_throttle 18.2, long_scoreboard 0.6 |
-| S5 | `tuned` | C64 | `15b83a5` | 24.3 | 41.9 | 19.39 MB | 1.7 | 0.0 | 95.4 | 10352656 | 12.5 | 168 | 20.36 | mio_throttle 22.0, barrier 6.1, long_scoreboard 0.9 |
+| S5 | `tuned` | C128 | `371f406` | 22.8 | 41.6 | 38.29 MB | 1.4 | 0.0 | 95.4 | 26901647 | 12.5 | 168 | 17.41 | barrier 18.3, mio_throttle 18.2, long_scoreboard 0.6 |
+| S5 | `tuned` | C64 | `371f406` | 24.3 | 42.0 | 19.26 MB | 1.7 | 0.0 | 95.5 | 10353144 | 12.5 | 168 | 20.36 | mio_throttle 22.0, barrier 6.1, long_scoreboard 0.8 |
 
 `-Xptxas -v` at the same SHA:
 
 | stage | kernel | arch | registers | static smem B | spill stores / loads B |
 |---|---|---|---|---|---|
+| S5 | `fa_smoke` | sm_75 | 10 | 0 | 0 / 0 |
+| S5 | `fa_s1_pv` | sm_75 | 29 | 0 | 0 / 0 |
+| S5 | `fa_s1_qk` | sm_75 | 34 | 0 | 0 / 0 |
+| S5 | `fa_s1_pv` | sm_75 | 29 | 0 | 0 / 0 |
+| S5 | `fa_s1_qk` | sm_75 | 34 | 0 | 0 / 0 |
+| S5 | `fa_s1_pv` | sm_75 | 30 | 0 | 0 / 0 |
+| S5 | `fa_s1_qk` | sm_75 | 34 | 0 | 0 / 0 |
+| S5 | `fa_s1_pv` | sm_75 | 30 | 0 | 0 / 0 |
+| S5 | `fa_s1_qk` | sm_75 | 34 | 0 | 0 / 0 |
+| S5 | `fa_s1_softmax` | sm_75 | 42 | 32 | 0 / 0 |
+| S5 | `fa_s2_pv_tiled` | sm_75 | 59 | 8192 | 0 / 0 |
+| S5 | `fa_s2_qk_tiled` | sm_75 | 61 | 8192 | 0 / 0 |
+| S5 | `fa_s2_pv_tiled` | sm_75 | 61 | 8192 | 0 / 0 |
+| S5 | `fa_s2_qk_tiled` | sm_75 | 61 | 8192 | 0 / 0 |
+| S5 | `fa_s2_softmax` | sm_75 | 39 | 64 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 4 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 4 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 4 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 4 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 4 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 4 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 253 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 168 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 168 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 150 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 112 | 0 | 0 / 0 |
+| S5 | `fa_s4_wmma` | sm_75 | 92 | 0 | 0 / 0 |
 | S5 | `fa_s5_tuned` | sm_75 | 4 | 0 | 0 / 0 |
 | S5 | `fa_s5_tuned` | sm_75 | 4 | 0 | 0 / 0 |
 | S5 | `fa_s5_tuned` | sm_75 | 4 | 0 | 0 / 0 |
@@ -1130,6 +1157,24 @@ each launch.
 | S5 | `fa_s5_tuned` | sm_75 | 127 | 0 | 0 / 0 |
 | S5 | `fa_s5_tuned` | sm_75 | 124 | 0 | 0 / 0 |
 | S5 | `fa_s5_tuned` | sm_75 | 120 | 0 | 0 / 0 |
+| S5 | `_ZN42_GLOBAL__N__477c29ba_13_bench_main_cu_main1` | sm_75 | 14 | 0 | 0 / 0 |
+| S5 | `_ZN42_GLOBAL__N__477c29ba_13_bench_main_cu_main1` | sm_75 | 10 | 0 | 0 / 0 |
+| S5 | `_ZN42_GLOBAL__N__477c29ba_13_bench_main_cu_main1` | sm_75 | 10 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 255 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 193 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 250 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 153 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 146 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 255 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 191 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 248 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 152 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 149 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 254 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 196 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 201 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 162 | 0 | 0 / 0 |
+| S5 | `fa_s3_fused` | sm_75 | 144 | 0 | 0 / 0 |
 
 <!-- NCU:END -->
 
