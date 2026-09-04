@@ -1,10 +1,10 @@
-==PROF== Connected to process 5839 (/content/fa/build/bench/fa_bench)
+==PROF== Connected to process 11558 (/content/fa/build/bench/fa_bench)
 ==PROF== Profiling "fa_s5_tuned": 0%....50%....100% - 14 passes
 fa_bench: Tesla T4 (sm_75) driver 580.82.07 runtime 12.8 nvcc 12.8.93 archs=75-real build=Release free 15.50/15.64 GB
 CHECK_OK rows=128 heads=2 max_abs_err_o=2.27e-05 (cap 1e-02) max_abs_err_lse=6.82e-07
 checksum=2ecda471c5fb735d
-stage 5 tuned B2_H8_N2048_D128 fp16 causal=0: median 8.4413 ms (p10 8.4295, p90 8.4457, min 8.4238, max 8.4461) over 12 iters/10 warmup/4 sets -> 4.070 TFLOP/s, 4.0 GB/s
+stage 5 tuned B2_H8_N2048_D128 fp16 causal=0: median 8.4384 ms (p10 8.4300, p90 8.4461, min 8.4294, max 8.4520) over 12 iters/10 warmup/4 sets -> 4.072 TFLOP/s, 4.0 GB/s
 commit,gpu,driver,nvcc,torch,ncu,clock_mhz,impl,stage,dtype,B,H,N,D,causal,ms_median,ms_p10,ms_p90,tflops,gbps,notes
-371f406,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,585,tuned,5,fp16,2,8,2048,128,0,8.4413,8.4295,8.4457,4.070,4.0,check=rows128;clock=unlocked;iters=12;warmup=10
-==PROF== Disconnected from process 5839
+371f406,Tesla T4,580.82.07,12.8.93,,2025.1.1.0,585,tuned,5,fp16,2,8,2048,128,0,8.4384,8.4300,8.4461,4.072,4.0,check=rows128;clock=unlocked;iters=12;warmup=10
+==PROF== Disconnected from process 11558
 ==PROF== Report: /content/fa/profiles/t4/stage5_tuned_C128.ncu-rep
