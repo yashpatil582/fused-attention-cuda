@@ -159,3 +159,26 @@ Running total: **$0.00** (cap ~$25). Colab T4 time used: ~5 GPU-hours across 202
   canonical pair is benchmarked separately after it (same clock lock) — the README canonical row and the
   sweep rows must come from the same commit.
 
+### 2026-09-04 00:24–00:45 UTC — Colab quota back: the 371f406 canonical pair and two re-captures land
+
+- The 2026-09-03 09:45 UTC run at 371f406 was cut at the bench step by the session limit and the free
+  GPU quota was exhausted afterwards. A 23:59 UTC retry got a T4 and reached the sweep step, but the
+  runtime was gone by 00:24 UTC with nothing harvested (fresh VM on reconnect). Lesson applied
+  immediately: measure the row that matters first and harvest after it, not once at the end.
+- 00:28 UTC, fresh T4, `gpu_run.sh --stage 5 --gpu t4 --mode full` at 371f406 with the canonical pair
+  first: build 1:50, ctest, compute-sanitizer clean, ncu PASS, pytest-gpu 47 passed / 31 skipped /
+  1 xpassed, `bench.py` canonical rows under the 585 MHz lock, `profile.sh` 2 captures — 16 min end to
+  end. Committed as c03a8a2.
+- Rows (`stage5.csv` @ 371f406): C64 tuned **3.6374 ms** (4.72 TFLOP/s) vs SDPA EFFICIENT fp16
+  2.4850 ms = 68 %; the d835758 run read 3.6286 / 2.4860 = 69 % (0.2 % spread; the rounded percent
+  flips, the README now says 68 % because that is what the HEAD row divides to). C128 tuned
+  **8.4527 ms** (4.07 TFLOP/s) vs 4.9972 ms = 59 %, matching the A/B's 8.4526 ms; the re-captured
+  Nsight kernel time is 8.449 ms (15b83a5: 8.437). The size-aware default is now backed by a canonical
+  `bench.py` row, the A/B and a capture, all at the shipping commit. Every metric in the STAGES S5
+  "ncu after" table moved < 2.3 % between the two captures.
+- Transport without a PAT, cheaper than 2026-09-03: the harvest cell prints the xz+base64 blob, a page
+  script selects that output element, ⌘C copies it into the Mac clipboard, `pbpaste` → `ingest.sh`
+  (sha256 verified). Only works with the notebook editor blurred — with the cell in edit mode ⌘C copies
+  the cell source instead of the selected output.
+- 00:42 UTC: `--sweep --gpt` re-run at 371f406 started so the 48-config sweep and the GPT block are also
+  stamped at the shipping commit (committed separately if the session survives).

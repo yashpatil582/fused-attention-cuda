@@ -13,14 +13,14 @@ exposed as a PyTorch custom op (`torch.ops.fused_attn.forward`) registered with 
 and a `register_fake` kernel; `torch.library.opcheck` and a `torch.compile(fullgraph=True)`
 no-graph-break test are in `tests/test_op_gpu.py` and pass on the T4.
 
-**Status (2026-09-03): S0–S7 done on the Colab T4; every number in this repository is from a
+**Status (2026-09-04): S0–S7 done on the Colab T4; every number in this repository is from a
 committed CSV or Nsight capture.** Canonical config B2 H8 N2048, SM clock locked at 585 MHz,
-medians: D=64 naive 410.6 → tiled 59.2 → fused 25.1 → WMMA fp16 3.94 → tuned **3.63 ms** (113×
-from naive, **69 %** of SDPA `EFFICIENT_ATTENTION` fp16 at 2.49 ms); D=128 817.1 → 115.8 → 94.3
-→ 11.17 → **8.45 ms** (97×, 59 % of SDPA at 5.00 ms) — the last figure is the size-aware tile at
-HEAD, measured in the A/B and in the Nsight capture; its `bench.py` canonical row is the one
-measurement still pending GPU quota (`docs/STAGES.md` S5, the table below shows the previous
-default's 9.87 ms until it lands). Twenty Nsight Compute captures, compute-sanitizer clean at every
+medians at the kernel HEAD ships (371f406): D=64 naive 410.6 → tiled 59.2 → fused 25.1 → WMMA fp16
+3.94 → tuned **3.64 ms** (113× from naive, **68 %** of SDPA `EFFICIENT_ATTENTION` fp16 at 2.49 ms;
+the d835758 run of the same D=64 path read 3.63 ms / 69 % — a 0.2 % run-to-run spread that flips
+the rounded percent); D=128 817.1 → 115.8 → 94.3 → 11.17 → **8.45 ms** (97×, 59 % of SDPA at
+5.00 ms) — the size-aware tile, measured three ways that agree: the `bench.py` canonical row
+(8.4527 ms), the tuning A/B (8.4526 ms) and the Nsight capture (8.449 ms). Twenty Nsight Compute captures, compute-sanitizer clean at every
 stage, 48-config sweeps for S1–S5 (causal tile skipping measured at 1.73–1.87×), the op passes
 `opcheck` and `torch.compile(fullgraph=True)`, and a nanoGPT block runs at 703 K tokens/s on our
 kernel vs 816–856 K on SDPA. No sm_80+ row exists: Track B was never started, $0 spent.

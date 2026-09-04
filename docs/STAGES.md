@@ -527,13 +527,15 @@ win. The crossover is between 1024 and 2048 (mixed at 1024), so 371f406 picks th
 threshold, read off a committed sweep, and every row of the 371f406 sweep is the tile the rule
 picks. S4's tile stays reachable at any N through `FA_FORCE_BR=32 FA_FORCE_BC=32`.
 
-**ncu after (15b83a5, the D=128 tile 371f406 selects from N = 2048 up).**
-`profiles/t4/stage5_tuned_C128.raw.csv` @ 15b83a5; C64 is unchanged by the rule (3.643 ms,
-0.86 % `long_scoreboard`, 12.51 % warps active):
+**ncu after (the D=128 tile 371f406 selects from N = 2048 up; captured at 15b83a5, re-captured at
+371f406).** The committed `profiles/t4/stage5_tuned_C128.raw.csv` is the 371f406 re-capture
+(2026-09-04); the table was written from the 15b83a5 capture and every metric in it moved by less
+than 2.3 % between the two (kernel time 8.437 → 8.449 ms). C64 is unchanged by the rule (3.641 ms,
+0.84 % `long_scoreboard`, 12.51 % warps active):
 
 | C128 | S4's tile + prefetch (d835758) | tall tile (15b83a5) |
 |---|---|---|
-| kernel time | 9.887 ms | **8.437 ms** (−14.7 %; −24.0 % vs S4's 11.105) |
+| kernel time | 9.887 ms | **8.437 ms** at 15b83a5, 8.449 ms at 371f406 (−14.5 %; −23.9 % vs S4's 11.105) |
 | `sm__warps_active` | 6.25 % | **12.51 %** |
 | `lts__t_bytes.sum` | 1,091 MB | **554 MB** (K/V re-reads per head halve with BR) |
 | `dram__bytes.sum` | 38.37 MB | 38.28 MB |
@@ -547,17 +549,20 @@ Reading: the win is L2 traffic (halved) plus four resident warps instead of two;
 barrier share (four warps meet at twice as many barriers, 7.4 → 18.3 %), which is exactly what
 turns into a loss when N is small and the tiles are few.
 
-**Bench delta.** `bench/results/t4/stage5.csv`, 585 MHz. C64: S4 3.9442 → **3.6286 ms**
-(−8.0 %, 4.74 TFLOP/s, **69 %** of SDPA EFFICIENT fp16 at 2.4860 ms), unchanged by 371f406.
-C128 at the canonical config: S4 11.1697 → 9.8732 ms with S4's tile + prefetch (the d835758
-default row, −11.6 %) → **8.4526 ms** with the tile 371f406 selects there
-(`stage5_tuning.csv` br64_bc16_pf1, −24.3 % vs S4; the Nsight capture of the same tile reads
-8.437 ms) = **59 %** of SDPA (5.0012 ms). One measurement in this entry is still pending: the
-`bench.py --cfg canonical` row stamped 371f406 — that run was cut at the bench step by the Colab
-session limit and the free GPU quota was then exhausted (`docs/WORKLOG.md`); every per-config
-number the size rule produces is otherwise already a committed row (d835758 rows for N < 2048,
-15b83a5 rows for N ≥ 2048). Whole ladder at C64: 410.6 → 59.2 → 25.1 → 3.94 → 3.63 ms = **113×**
-from naive; at C128: 817.1 → 115.8 → 94.3 → 11.17 → 8.45 ms = 97×.
+**Bench delta.** `bench/results/t4/stage5.csv`, 585 MHz. C64: S4 3.9442 → **3.6374 ms** at
+371f406 (−7.8 %, 4.72 TFLOP/s, **68 %** of SDPA EFFICIENT fp16 at 2.4850 ms); the size rule does
+not touch D=64, and the d835758 run of the same path read 3.6286 ms against 2.4860 (69 %) — a 0.2 %
+run-to-run spread that happens to sit on the rounding boundary, so the README quotes what the HEAD
+row divides to. C128 at the canonical config: S4 11.1697 → 9.8732 ms with S4's tile + prefetch
+(the d835758 default row, −11.6 %) → **8.4527 ms** with the tile 371f406 selects there (the
+371f406 `bench.py --cfg canonical` row, run 2026-09-04T00:33:58Z, −24.3 % vs S4; the same tile read
+8.4526 ms in the `stage5_tuning.csv` A/B and 8.449 ms in the 371f406 Nsight capture) = **59 %** of
+SDPA (4.9972 ms). That canonical row was the last open measurement of this entry: the 2026-09-03
+run at 371f406 was cut at the bench step by the Colab session limit, the free GPU quota was then
+exhausted, and the row landed on 2026-09-04 once a T4 came back (`docs/WORKLOG.md`); every
+per-config number the size rule produces is a committed row (d835758 rows for N < 2048, 15b83a5
+rows for N ≥ 2048). Whole ladder at C64: 410.6 → 59.2 → 25.1 → 3.94 → 3.64 ms = **113×** from
+naive; at C128: 817.1 → 115.8 → 94.3 → 11.17 → 8.45 ms = 97×.
 
 **Decision.** Kept, both knobs, defaults as above. Rejected and kept instantiated: WARPS 8 at D=64
 (−5.5 % against the default), WARPS 2 everywhere, every `PREFETCH=0` variant.
