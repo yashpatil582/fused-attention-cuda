@@ -20,8 +20,9 @@ medians at the kernel HEAD ships (371f406): D=64 naive 410.6 → tiled 59.2 → 
 the d835758 run of the same D=64 path read 3.63 ms / 69 % — a 0.2 % run-to-run spread that flips
 the rounded percent); D=128 817.1 → 115.8 → 94.3 → 11.17 → **8.45 ms** (97×, 59 % of SDPA at
 5.00 ms) — the size-aware tile, measured three ways that agree: the `bench.py` canonical row
-(8.4527 ms), the tuning A/B (8.4526 ms) and the Nsight capture (8.449 ms). Twenty Nsight Compute captures, compute-sanitizer clean at every
-stage, 48-config sweeps for S1–S5 (causal tile skipping measured at 1.73–1.87×), the op passes
+(8.4527 ms), the tuning A/B (8.4526 ms) and the Nsight capture (8.439 ms). Twenty Nsight Compute captures, compute-sanitizer clean at every
+stage, 48-config sweeps for S1–S5 (causal tile skipping measured at 1.73–1.87× with S4's tile,
+1.64–1.86× at HEAD's size-aware tile — `docs/STAGES.md` S6), the op passes
 `opcheck` and `torch.compile(fullgraph=True)`, and a nanoGPT block runs at 703 K tokens/s on our
 kernel vs 816–856 K on SDPA. No sm_80+ row exists: Track B was never started, $0 spent.
 

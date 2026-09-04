@@ -173,12 +173,18 @@ Running total: **$0.00** (cap ~$25). Colab T4 time used: ~5 GPU-hours across 202
   2.4850 ms = 68 %; the d835758 run read 3.6286 / 2.4860 = 69 % (0.2 % spread; the rounded percent
   flips, the README now says 68 % because that is what the HEAD row divides to). C128 tuned
   **8.4527 ms** (4.07 TFLOP/s) vs 4.9972 ms = 59 %, matching the A/B's 8.4526 ms; the re-captured
-  Nsight kernel time is 8.449 ms (15b83a5: 8.437). The size-aware default is now backed by a canonical
-  `bench.py` row, the A/B and a capture, all at the shipping commit. Every metric in the STAGES S5
-  "ncu after" table moved < 2.3 % between the two captures.
+  Nsight kernel time read 8.449 ms in this run (15b83a5: 8.437). The size-aware default is now backed
+  by a canonical `bench.py` row, the A/B and a capture, all at the shipping commit.
 - Transport without a PAT, cheaper than 2026-09-03: the harvest cell prints the xz+base64 blob, a page
   script selects that output element, ⌘C copies it into the Mac clipboard, `pbpaste` → `ingest.sh`
   (sha256 verified). Only works with the notebook editor blurred — with the cell in edit mode ⌘C copies
   the cell source instead of the selected output.
-- 00:42 UTC: `--sweep --gpt` re-run at 371f406 started so the 48-config sweep and the GPT block are also
-  stamped at the shipping commit (committed separately if the session survives).
+- 00:42–00:52 UTC: `--sweep --gpt` at 371f406 on the same VM (build reused): 176 sweep rows, GPT block
+  703.3 K tok/s on our op vs 855.9 K on SDPA EFFICIENT (identical to 15b83a5), and the two captures
+  re-taken once more — C128 8.439 ms, C64 3.639 ms are the committed files now, and every metric in
+  the STAGES S5 "ncu after" table is within 0.2 % of the 15b83a5 capture it was written from.
+  Committed as b8bc949. Every README sweep row is now the shipping kernel's own measurement.
+- Causal skip at the size-aware tile (371f406 sweep): 1.76–1.86× at D=64, 1.73–1.81× at D=128 for
+  N = 1024, 1.64–1.73× at D=128 for N ≥ 2048 (tall tile: half the query tiles, a smaller and more
+  uneven causal grid at B·H = 8 — hypothesis, not profiled). STAGES S6 / INTERVIEW carry the numbers.
+- Colab: three runs on one T4 session (00:28–00:52 UTC), $0; the runtime was deleted afterwards.

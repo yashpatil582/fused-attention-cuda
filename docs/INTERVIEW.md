@@ -227,7 +227,8 @@ Skipping by loop bound (`kv_end = causal ? min(i0 + BR, N) : N`) has been in eve
 since S3, and the T4 sweep measures it: causal / non-causal time at fixed shape is **1.73-1.87x**
 over N in {1024, 2048, 4096}, D in {64, 128}, B x H in {8, 256} (`bench/results/t4/stage5.csv`
 @ d835758, fp16; e.g. B1_H8_N2048_D64 1.108 vs 1.956 ms = 1.77x, B8_H32_N4096_D64 112.45 vs
-209.33 ms = 1.86x; S4 gives the same 1.73-1.87x). It is below 2x for exactly the `(n + 1) / (2n)`
+209.33 ms = 1.86x; S4 gives the same 1.73-1.87x; at the shipping kernel, 371f406, the size-aware
+D=128 tile reads 1.64-1.73x for N >= 2048 and D=64 stays at 1.76-1.86x). It is below 2x for exactly the `(n + 1) / (2n)`
 reason plus the masked diagonal tile. Accounting follows CONTRACT §5: a causal row of a
 tile-skipping kernel is credited half of `4 B H N^2 D` (`flops=causal_half`, the FlashAttention
 benchmark convention) so its TFLOP/s is comparable with the dense row; rows benchmarked before that
